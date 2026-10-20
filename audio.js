@@ -1,16 +1,21 @@
 'use strict';
 /* =====================================================================
-   PaM-ONG — audio.js
+   PaM-ONG — audio.js (v2)
    Semua suara DISINTESIS dengan WebAudio: SFX pendek + loop musik
    chiptune sederhana (bass + melodi + noise perkusi).
    Audio hanya mulai setelah gestur pengguna (tombol MULAI).
+   v2: saklar musik & SFX terpisah (musicOn / sfxOn) untuk menu
+   PENGATURAN; setMuted() lama dipertahankan sebagai saklar utama.
    ===================================================================== */
 
 const AUDIO = {
   ctx: null,
   master: null,
+  sfxGain: null,
   musicGain: null,
   muted: false,
+  musicOn: true,
+  sfxOn: true,
   musicTimer: null,
   nextNoteTime: 0,
   step: 0,
@@ -23,17 +28,30 @@ const AUDIO = {
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.9;
     this.master.connect(this.ctx.destination);
+    this.sfxGain = this.ctx.createGain();
+    this.sfxGain.gain.value = 0.9;
+    this.sfxGain.connect(this.master);
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.value = 0.5;
     this.musicGain.connect(this.master);
   },
 
+  // Saklar utama (tombol mute lama / tombol M)
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.value = m ? 0 : 0.9;
   },
+  // Saklar per kanal dari menu Pengaturan
+  setMusicOn(on) {
+    this.musicOn = on;
+    if (this.musicGain && this.ctx) this.musicGain.gain.setTargetAtTime(on ? 0.5 : 0, this.ctx.currentTime, 0.02);
+  },
+  setSfxOn(on) {
+    this.sfxOn = on;
+    if (this.sfxGain && this.ctx) this.sfxGain.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.02);
+  },
 
-  // --- util dasar -----------------------------------------------------
+  // --- util dasar (SFX dirutekan ke sfxGain; musik memakai dest eksplisit)
   tone(freqA, freqB, dur, type, vol, when, dest) {
     if (!this.ctx || this.muted) return;
     const t = when || this.ctx.currentTime;
@@ -44,7 +62,7 @@ const AUDIO = {
     if (freqB !== freqA) o.frequency.exponentialRampToValueAtTime(Math.max(1, freqB), t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(dest || this.master);
+    o.connect(g); g.connect(dest || this.sfxGain || this.master);
     o.start(t); o.stop(t + dur + 0.02);
   },
 
@@ -64,7 +82,7 @@ const AUDIO = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.sfxGain || this.master);
     src.start(t); src.stop(t + dur + 0.02);
   },
 
@@ -73,6 +91,16 @@ const AUDIO = {
   sHmg()        { this.tone(660, 200, 0.045, 'square', 0.08); this.noise(0.03, 0.05, 3000, 'highpass'); },
   sRocketLaunch(){ this.noise(0.28, 0.12, 500, 'bandpass', 0, 2400); },
   sShotgun()    { this.noise(0.16, 0.22, 1400, 'lowpass', 0, 200); this.tone(160, 60, 0.12, 'square', 0.10); },
+  sFlame()      { this.noise(0.14, 0.13, 900, 'lowpass', 0, 2400); },
+  sLaser()      { this.tone(1400, 300, 0.11, 'sawtooth', 0.09); },
+  sChaser()     { this.noise(0.2, 0.1, 700, 'bandpass', 0, 1800); this.tone(500, 900, 0.12, 'square', 0.05); },
+  sVulcan()     { this.tone(700, 260, 0.04, 'square', 0.07); },
+  sCannon()     { this.noise(0.3, 0.3, 700, 'lowpass', 0, 80); this.tone(120, 40, 0.25, 'sine', 0.32); },
+  sTracks()     { this.noise(0.07, 0.045, 300, 'lowpass'); },  // gesekan rantai roda Slug
+  sSplash()     { this.noise(0.22, 0.16, 1200, 'bandpass', 0, 400); },
+  sWaterShot()  { this.noise(0.15, 0.1, 1600, 'bandpass', 0, 500); },
+  sRoar()       { this.tone(90, 55, 0.5, 'sawtooth', 0.22); this.noise(0.4, 0.12, 400, 'lowpass', 0, 120); },
+  sStomp()      { this.tone(70, 30, 0.3, 'sine', 0.4); this.noise(0.22, 0.22, 200, 'lowpass', 0, 60); },
   sExplosion(big) {
     this.noise(big ? 0.55 : 0.3, big ? 0.4 : 0.25, 900, 'lowpass', 0, 60);
     this.tone(big ? 130 : 110, 30, big ? 0.5 : 0.3, 'sine', 0.35);
@@ -88,7 +116,6 @@ const AUDIO = {
   sPowFree()    { const t = this.ctx ? this.ctx.currentTime : 0; this.tone(523, 523, 0.08, 'square', 0.1, t); this.tone(659, 659, 0.08, 'square', 0.1, t + 0.08); this.tone(784, 784, 0.12, 'square', 0.1, t + 0.16); },
 
   // --- Musik: loop chiptune bergaya militer ---------------------------
-  // Pola 32 langkah (not MIDI, 0 = diam). Tempo 132 BPM, langkah = not 1/8.
   BASS: [33,0,33,0, 36,0,33,0, 31,0,31,0, 33,0,38,0,
          33,0,33,0, 36,0,33,0, 40,0,38,0, 36,0,31,0],
   LEAD: [57,0,0,60, 0,64,0,60, 62,0,0,59, 0,57,0,0,
@@ -105,12 +132,11 @@ const AUDIO = {
       while (this.nextNoteTime < this.ctx.currentTime + 0.14) {
         const s = this.step % 32;
         const t = this.nextNoteTime;
-        if (!this.muted) {
+        if (!this.muted && this.musicOn) {
           const b = this.BASS[s];
           if (b) this.tone(this.midiHz(b), this.midiHz(b), stepDur * 0.9, 'triangle', 0.20, t, this.musicGain);
           const l = this.LEAD[s];
           if (l) this.tone(this.midiHz(l), this.midiHz(l), stepDur * 0.85, 'square', 0.055, t, this.musicGain);
-          // perkusi: "snare" noise di ketukan 2 & 4, "hat" tipis tiap langkah genap
           if (s % 8 === 4) this.noiseAt(t, 0.09, 0.06, 1800);
           else if (s % 2 === 0) this.noiseAt(t, 0.03, 0.02, 6000);
         }
@@ -122,7 +148,6 @@ const AUDIO = {
   },
 
   noiseAt(t, dur, vol, freq) {
-    // varian noise() dengan waktu & gain musik yang eksplisit
     if (!this.ctx) return;
     const len = Math.max(1, (dur * this.ctx.sampleRate) | 0);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>PaM-ONG — Misi 1</title>
+<title>PaM-ONG v2 — Misi 1</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,17 +13,47 @@
 
   <!-- Layar judul -->
   <div id="titleScreen" class="screen">
-    <h1 class="logo">PaM&#8209;ONG</h1>
-    <p class="tagline">MISI 1 &mdash; OPERASI SENJA</p>
-    <div class="controls-box">
-      <p><b>GERAK</b>: &larr; &rarr; &uarr; &darr; / D-Pad</p>
-      <p><b>A &mdash; TEMBAK</b> (tahan = auto): Z / J</p>
-      <p><b>B &mdash; LOMPAT</b>: X / K</p>
-      <p><b>C &mdash; GRANAT</b>: C / L</p>
-      <p>Bebaskan POW untuk dapat senjata. Hancurkan tank Di-Cokka!</p>
+    <div class="title-row">
+      <canvas id="avatarCanvas" width="72" height="72"></canvas>
+      <div class="title-text">
+        <h1 class="logo">PaM&#8209;ONG</h1>
+        <p class="tagline">MISI 1 &mdash; OPERASI SENJA &bull; v2</p>
+      </div>
     </div>
-    <button id="startBtn" class="big-btn">MULAI MISI</button>
-    <p class="hint">Enter / Spasi juga bisa &bull; M = bisu</p>
+    <div class="controls-box">
+      <p><b>GERAK / AIM 8 ARAH</b>: &larr; &rarr; &uarr; &darr; / D-Pad</p>
+      <p><b>A &mdash; TEMBAK</b> (tahan = auto): Z / J &bull; <b>B &mdash; LOMPAT</b>: X / K &bull; <b>C &mdash; GRANAT</b>: C / L</p>
+      <p>Naik SV-001: dekati tank lalu tekan &uarr;. Di dalam tank: A Vulcan, C Meriam, &darr;+B keluar.</p>
+      <p>Urutan misi: Monster Laut &rarr; SV-001 &rarr; Di-Cokka &rarr; ROBOT TITAN. Bebaskan POW untuk senjata!</p>
+    </div>
+    <div class="btn-row">
+      <button id="startBtn" class="big-btn">MULAI MISI</button>
+      <button id="settingsBtn" class="small-btn">PENGATURAN</button>
+      <button id="fsBtn" class="small-btn">LAYAR PENUH</button>
+    </div>
+    <p class="hint">Enter / Spasi juga bisa &bull; M = bisu &bull; P / Esc = jeda</p>
+  </div>
+
+  <!-- Menu pengaturan -->
+  <div id="settingsScreen" class="screen hidden">
+    <h1 class="logo small">PENGATURAN</h1>
+    <div class="settings-box">
+      <label class="set-row"><span>Layar Penuh saat mulai</span><input type="checkbox" id="optFullscreen"></label>
+      <label class="set-row"><span>Musik</span><input type="checkbox" id="optMusic"></label>
+      <label class="set-row"><span>Suara (SFX)</span><input type="checkbox" id="optSfx"></label>
+      <label class="set-row"><span>Getar</span><input type="checkbox" id="optVibrate"></label>
+    </div>
+    <button id="settingsBackBtn" class="big-btn">KEMBALI</button>
+  </div>
+
+  <!-- Layar jeda -->
+  <div id="pauseScreen" class="screen hidden">
+    <h1 class="logo small">JEDA</h1>
+    <div class="btn-col">
+      <button id="resumeBtn" class="big-btn">LANJUTKAN</button>
+      <button id="pauseSettingsBtn" class="small-btn">PENGATURAN</button>
+      <button id="quitBtn" class="small-btn">KE JUDUL</button>
+    </div>
   </div>
 
   <!-- Layar ringkasan / game over -->
@@ -33,6 +63,15 @@
     <button id="againBtn" class="big-btn">MAIN LAGI</button>
     <button id="menuBtn" class="small-btn">KE JUDUL</button>
   </div>
+
+  <!-- Overlay putar HP -->
+  <div id="rotateOverlay" class="hidden">
+    <div class="rotate-icon">&#8635;</div>
+    <p>PUTAR HP ANDA</p>
+    <p class="rotate-sub">Game ini dimainkan miring (landscape)</p>
+  </div>
+
+  <button id="pauseBtn" class="hidden" aria-label="Jeda">| |</button>
 </div>
 
 <!-- Kontrol sentuh -->

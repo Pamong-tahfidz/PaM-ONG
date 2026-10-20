@@ -131,3 +131,171 @@ Format entri: `## [tanggal] Judul singkat` lalu **Kesalahan**, **Penyebab**, **P
 **Perbaikan:** README diubah menjadi "10 di awal misi; seusai respawn granat terisi minimal 3".
 
 **Pelajaran untuk agen lain:** Setiap angka di README (amunisi, HP, bonus, jumlah frame) harus bisa ditunjuk baris kodenya. Audit dokumen adalah bagian dari audit kode.
+
+## [2026-10-20] UPGRADE v2 — Kolisi nama `drawTitan` antara sprites.js dan game.js
+
+**Kesalahan:** `sprites.js` menamai pelukis sprite Titan `drawTitan()` dan `game.js` menamai perender Titan di layar juga `drawTitan(camX)`. Karena semua `<script>` klasik berbagi lingkup global, deklarasi terakhir (game.js) menimpa yang pertama: `buildSprites()` memanggil `drawTitan()` milik game.js → menyentuh konstanta `titan` yang belum terinisialisasi (TDZ) → game gagal boot total dengan `ReferenceError`.
+
+**Penyebab:** Dua berkas, satu nama fungsi generik ("draw" + nama entitas) untuk dua peran berbeda (pelukis sprite vs perender entitas).
+
+**Perbaikan:** Pelukis di `sprites.js` diganti nama menjadi `buildTitanSprite()`; perender di `game.js` tetap `drawTitan`. Ditangkap oleh uji asap Node sebelum sempat tayang.
+
+**Pelajaran untuk agen lain:** Konvensi awalan wajib: pelukis sprite = `build*`/`draw*Sprite`, perender entitas = `draw*` di game.js saja. Setiap menambah fungsi global baru, grep dulu namanya di SEMUA berkas .js — kolisi nama lintas berkas tidak terdeteksi `node --check` per berkas.
+
+## [2026-10-20] UPGRADE v2 — Kotak tabrak kepala Monster Laut tenggelam di bawah tanah
+
+**Kesalahan:** Rumus `sea.head.y = GROUND_Y + 46 - 44 * rise` menaruh kotak kepala pada y=194..230 saat rise penuh — seluruhnya DI BAWAH permukaan tanah, sementara gambarnya digambar muncul di y=156..196. Akibatnya kepala tidak akan pernah bisa ditembak pemain.
+
+**Penyebab:** Rumus kotak logika ditulis dari ingatan, bukan diturunkan dari rumus gambar (`drawImage` di `GROUND_Y + 4 - visH`). Dua sumber kebenaran untuk satu posisi.
+
+**Perbaikan:** Satu rumus dipakai bersama: `sea.head.y = GROUND_Y + 4 - 42 * rise`, konsisten di buildLevel, updateSea (fase bertarung & sekarat), dan gambar. Terverifikasi uji asap: kotak tembak uji mengenai kepala saat rise ≥ 0,6.
+
+**Pelajaran untuk agen lain:** Untuk entitas yang digambar dengan rumus offset/rise, kotak tabrak HARUS memakai rumus yang sama persis. Uji asap wajib menembak target dari geometri nyata, bukan memanggil fungsi damage secara langsung saja.
+
+## [2026-10-20] UPGRADE v2 — Potongan sprite muncul dari sisi yang salah (kepala & tentakel laut)
+
+**Kesalahan:** Awalnya kemunculan kepala/tentakel memakai potongan sumber dari BAWAH (`srcY = img.height - visH`) sehingga pangkal/dagu muncul lebih dulu dari air — kebalikan dari gerakan muncul ke atas.
+
+**Penyebab:** Kebiasaan pola "potong dari bawah" untuk batang yang memanjang ke bawah diterapkan mentah-mentah pada objek yang muncul ke atas dari permukaan.
+
+**Perbaikan:** Potongan sumber dari ATAS (`srcY = 0`, tinggi `visH`), tujuan digambar menempel permukaan air; ujung tentakel & puncak kepala muncul lebih dulu.
+
+**Pelajaran untuk agen lain:** Untuk animasi muncul/tenggelam, tentukan dulu titik yang menembus permukaan lebih dulu, baru pilih sisi potongan sumbernya. Uji visual tidak bisa digantikan uji logika — catat sebagai titik periksa visual bagi pengoreksi.
+
+## [2026-10-20] UPGRADE v2 — Roket Bazooka nyaris tidak bisa ditembak jatuh (geometri ketinggian)
+
+**Kesalahan:** Roket bazooka lahir di `e.y + 6` dengan kotak tangkap 7×4, sedangkan peluru pemain terbang pada ketinggian moncong yang berbeda beberapa piksel — intersepsi sejajar (kasus paling umum) meleset di tepi kotak (`overlap` memakai pertidaksamaan ketat).
+
+**Penyebab:** Angka lahir roket dan kotak tangkap dipilih tanpa menghitung contoh geometri nyata pemain-di-tanah vs bazooka-di-tanah/platform.
+
+**Perbaikan:** Lahir roket `e.y + 5`, kotak peluru pemain dipertebal (h=3), kotak tangkap roket dilonggarkan menjadi 9×8 di sekitar badan roket. Terverifikasi uji asap: pemain di tanah menembak jatuh roket bazooka di tanah.
+
+**Pelajaran untuk agen lain:** Setiap proyektil yang "bisa ditembak jatuh" wajib diuji dengan angka geometri sungguhan (ketinggian moncong pemain vs ketinggian terbang proyektil) — bukan hanya "fungsi tabrakannya ada".
+
+## [2026-10-20] UPGRADE v2 — Kesalahan ketik string font & sisa dead code dalam penulisan sendiri
+
+**Kesalahan:** (1) `hudCtx.font = 'bold 13px "Courier New", monospace";` — penutup string tertukar (`"` bukan `'`) → SyntaxError. (2) Beberapa dead code lolos dalam draf sendiri: ternari dua cabang identik untuk varian turet Slug, blok `else if` kosong untuk kedip kebal, loop kosong di `bulletHitWorld`, blok kosong di `startGame`, dan variabel tak terpakai `surfacing` di updateSea.
+
+**Penyebab:** Menulis game.js dalam 7 tumpukan append besar lalu baru menjalankan `node --check` di akhir; peninjauan mandiri per tumpukan terlewat.
+
+**Perbaikan:** String diperbaiki; semua dead code di atas dihapus/diganti logika nyata (varian turet Cannon kini sungguhan memakai `slug.cannonCd`). `node --check` dijalankan setelah tiap tumpukan mulai sekarang.
+
+**Pelajaran untuk agen lain:** File besar ditulis bertahap = periksa sintaks SETIAP selesai satu tumpukan, bukan di ujung. Setelah menulis, grep hasil tulisanmu sendiri untuk pola malas: ternari bercabang sama, blok kosong `{}`, variabel yang hanya dideklarasikan.
+
+## Titik rawan BARU v2 (untuk agen pengoreksi berikutnya) — STATUS SETELAH AUDIT v2 (2026-10-20)
+
+1. ~~Laser vs Titan/Monster Laut/Di-Cokka tanpa penanda per-sinar~~ — **DIPERBAIKI** (lihat entri AUDIT v2: laser bos + nomor seri peluru).
+2. ~~Pijakan menara 2 tidak selaras~~ — **DIPERBAIKI**; angka klaim awal keliru (bukan bazooka/12px; selisih nyata 5px vs lantai kabin) — lihat entri AUDIT v2.
+3. `drawSlug()` memanggil `computeMuzzle()` saat render — terverifikasi fungsi murni tanpa efek samping; dibiarkan, tetap periksa kedua pemanggil bila logika moncong diubah.
+4. ~~surfT Monster Laut tertunda~~ — **TERVERIFIKASI KONSISTEN**, bukan bug (lihat entri AUDIT v2 "Terbukti BUKAN bug").
+5. Culling proyektil musuh memakai margin kamera (camX−60..+380) — **TERVERIFIKASI AMAN** untuk pola kiriman; tetap waspada bila kelak ada penembak di luar layar.
+6. Laser menembus peti/tenda/tong/POW tanpa berinteraksi dan tidak bisa menembak jatuh roket (cabang laser hanya mengenai musuh & bos) — inkonsistensi kecil yang DIBIARKAN (desain sinar penembus); catat bila suatu saat laser terasa "melewati" objek dunia.
+7. Kotak logika core Titan (x relatif 16..28) bergeser ±4px dari inti visual sprite (26..38 relatif gambar yang digambar di titan.x−6) — tumpang tindih sebagian besar; sempurnakan bila ada keluhan visual.
+
+
+## [2026-10-20] AUDIT v2 — Laser memberi damage berkali-kali ke ketiga bos dalam satu sinar (titik rawan 1 TERBUKTI)
+
+**Kesalahan:** Cabang laser di `updateProjectiles` memanggil `damageSea`/`damageCokka`/`damageTitan` tanpa penanda per-sinar. Terukur dengan uji asap agen pengoreksi (satu peluru laser dmg 2 ditembakkan relatif ke posisi bos): Titan badan kehilangan 12 HP (6 hit), core 16 HP (4 hit ×2), Di-Cokka 4 HP (2 hit, tertahan gerbang `hitT` 0,07 dtk), Monster Laut 4 HP (2 hit, juga via `hitT`). Komentar kode bahkan sudah menulis "damage sekali per target per peluru" — niatnya ada, implementasinya hanya untuk musuh biasa.
+
+**Penyebab:** Penanda `laserMark` hanya ditambahkan ke objek musuh biasa saat fitur laser dibuat; tiga bos ditangani cabang terpisah yang tidak pernah diberi penanda. Gerbang `hitT` adalah gerbang *waktu*, bukan per-sinar, jadi tetap bocor 2× dan bergantung geometri/kecepatan relatif.
+
+**Perbaikan:** Field `laserMark` ditambahkan ke `sea`, `cokka`, `titan` (direset di `buildLevel`); cabang laser kini memeriksa & memasang penanda sebelum memberi damage, menggantikan gerbang `hitT` untuk bos. Uji ulang: ketiga bos menerima tepat 1× damage per sinar (core Titan tepat 1× dengan pengali ×2).
+
+**Pelajaran untuk agen lain:** Bila satu mekanisme punya daftar target yang tumbuh (musuh, lalu bos A, bos B, bos C), periksa SEMUA cabang penanganannya setiap kali target baru ditambahkan — perbaikan di cabang pertama tidak menular ke cabang lain.
+
+## [2026-10-20] AUDIT v2 — Penanda laser memakai identitas objek pool: tembakan daur ulang bisa kebal
+
+**Kesalahan:** `laserMark` menyimpan referensi objek peluru (`e.laserMark = b`). Peluru berasal dari pool dan dipakai ulang; bila objek yang sama kelak diaktifkan lagi sebagai tembakan laser baru ke target yang penandanya belum terganti, target menganggapnya sinar lama dan TIDAK menerima damage sama sekali. Terbukti saat agen pengoreksi menguji core Titan dengan tembakan kedua: delta HP 0.
+
+**Penyebab:** Identitas objek pool ≠ identitas tembakan. Penanda dirancang saat laser pertama dibuat (pola v1 untuk musuh biasa) tanpa memikirkan siklus hidup pool.
+
+**Perbaikan:** Nomor seri unik `bulletSerial`: setiap aktivasi peluru pemain di `playerFire` menaikkan `b.id = ++bulletSerial`; semua penanda laser (musuh biasa + ketiga bos) kini menyimpan & membandingkan `b.id`. Objek daur ulang selalu membawa nomor baru.
+
+**Pelajaran untuk agen lain:** Jangan pernah memakai referensi objek pool sebagai identitas kejadian. Kejadian (tembakan, ledakan, spawn) butuh nomor seri monoton sendiri.
+
+## [2026-10-20] AUDIT v2 — Core Titan tidak pernah terjangkau tembakan lurus
+
+**Kesalahan:** `damageTitan` memberi pengali ×2 hanya bila kotak proyektil *tumpang tindih penuh* dengan kotak core (relatif x 16..28). Proyektil selalu berhenti di tepi depan badan Titan (x relatif ~0), jadi tembakan setinggi dada dari depan — cara pemain seharusnya mengenai core — selalu dihitung damage badan. Core ×2 praktis hanya terjangkau ledakan/zona api.
+
+**Penyebab:** Uji core meniru geometri sprite, bukan geometri lintasan proyektil yang berhenti di kontak pertama.
+
+**Perbaikan:** Core kini dinilai dari *pita vertikal*: proyektil yang mengenai badan Titan pada ketinggian pita core (titan.y+38..+50) dihitung mengenai core; tembakan ke kaki/kepala tetap damage normal. Terverifikasi: laser setinggi core = 1 hit ×2; setinggi badan bawah = 1 hit ×1; kotak uji langsung ke badan tetap ×1.
+
+**Pelajaran untuk agen lain:** Untuk titik lemah di dalam kotak tabrakan yang lebih besar, tanyakan "bagaimana proyektil nyata mencapai titik ini?" sebelum memilih uji geometrinya.
+
+## [2026-10-20] AUDIT v2 — Penyelarasan menara 2 (titik rawan 2: angka klaim keliru, selisih nyata 5px)
+
+**Kesalahan:** Catatan titik rawan menyebut "Bazooka Soldier gy=128 vs platform y=140". Kode kiriman tidak cocok dengan klaim itu: yang berdiri di menara 2 adalah **Grenade Soldier** (x=2075) dan platformnya y=138 — kaki musuh sebenarnya sudah tepat di platform. Ketidakselarasan yang nyata: sprite menara digambar dengan lantai kabin di dunia y=143 (gambar di GROUND_Y−64, lantai kabin offset 15), sedangkan platform & musuh di y=138 — musuh terlihat berdiri 5px menembus kabin/atap menara.
+
+**Penyebab:** Klaim titik rawan ditulis dari ingatan/draf, bukan diukur dari kode final; tidak ada konstanta bersama antara geometri gambar menara dan data platform.
+
+**Perbaikan:** PLATFORMS {x:2050} dan Grenade Soldier x=2075 diselaraskan 138 → 144 (lantai kabin 143 ±1). Uji data: seluruh musuh ber-`y` kini berdiri tepat di platformnya, dan platform menara 2 selaras lantai kabin.
+
+**Pelajaran untuk agen lain:** Titik rawan warisan tetap wajib diukur ulang dari kode kiriman — jangan memperbaiki angka dari catatan tanpa memverifikasi angka di kode; klaim yang keliru bisa menyembunyikan selisih yang sebenarnya.
+
+## [2026-10-20] AUDIT v2 — Timer misi menumpuk "utang" saat pemain di dalam Slug
+
+**Kesalahan:** Cabang timer hanya menangani `state === 'normal'`. Selama pemain di dalam SV-001, timer terus berkurang sampai 0 dan tertahan di sana; begitu pemain turun (manual, kebal hanya 0,5 dtk), tick berikutnya (≤1 dtk) memanggil `killPlayer()` — kematian tidak adil tanpa peringatan, padahal HUD menampilkan 0 sejak lama. Terukur uji asap: pemain yang timernya habis di dalam Slug mati pada tick pertama setelah turun.
+
+**Penyebab:** Pola lama "flag/timer bocor antar-state": state baru (slug) ditambahkan tanpa meninjau ulang mesin timer yang ditulis untuk dua state (normal/dead).
+
+**Perbaikan:** Bila timer mencapai 0 saat `state === 'slug'`, timer direset ke 30 tanpa membunuh (setara perlakuan state 'dead' yang tertutup kebal respawn). Perilaku di darat tidak berubah: habis saat jalan kaki tetap mati sekali & timer 30 (teruji).
+
+**Pelajaran untuk agen lain:** Setiap state pemain baru wajib diaudit terhadap SEMUA mesin berkala global (timer, zona api, gelombang, target musuh) — bukan hanya input & render.
+
+## [2026-10-20] AUDIT v2 — playerThrowGrenade: granat bisa −1 dan tipe terlempar salah (laten)
+
+**Kesalahan:** `useFire` dihitung SEBELUM saklar tipe otomatis: pada keadaan (tipe='normal', granat=0, firebomb>0) fungsi mengganti tipe ke 'fire' tetapi tetap memakai `useFire=false` lama → cabang `player.grenades--` mengeksekusi (granat menjadi **−1**) dan yang terlempar granat BIASA. Terukur uji asap dengan menyetel state langsung: hasil {granat: −1, firebomb utuh, terlempar: biasa}. Jalur ini sulit dicapai permainan normal (addFirebombs selalu mengalihkan tipe), tetapi cacat logikanya nyata.
+
+**Penyebab:** Nilai turunan (`useFire`) dibekukan dengan `const` sebelum mutasi yang seharusnya mengubahnya.
+
+**Perbaikan:** `useFire` menjadi `let` dan dihitung ulang (`useFire = true`) di dalam cabang saklar tipe. Uji ulang: firebomb berkurang 1, granat tetap 0, yang terlempar fire bomb.
+
+**Pelajaran untuk agen lain:** Bila sebuah fungsi mengganti mode/tipe di tengah jalan, hitung ulang semua nilai turunan setelah penggantian — atau lakukan penggantian SEBELUM turunan dihitung.
+
+## [2026-10-20] AUDIT v2 — Cannon Slug: amunisi hangus saat pool granat penuh
+
+**Kesalahan:** `slugFireCannon` mengurangi `slug.cannon` dan memasang cooldown SEBELUM `poolGet(grenades)`; bila pool granat sedang penuh, fungsi keluar tanpa menembak tetapi amunisi sudah berkurang. Terukur uji asap: pool diisi penuh → cannon 9 menjadi 8 tanpa peluru.
+
+**Penyebab:** Urutan "bayar dulu, ambil sumber daya kemudian" — kebalikan dari `playerThrowGrenade` yang sudah benar (poolGet dulu, baru kurangi stok).
+
+**Perbaikan:** `poolGet` dipindah ke depan; amunisi & cooldown hanya berubah bila peluru meriam benar-benar didapat.
+
+**Pelajaran untuk agen lain:** Untuk aksi berbayar: periksa sumber daya → ambil dari pool → BARU kenakan biaya. Satu urutan yang benar di satu fungsi tidak menjamin fungsi kembarannya benar.
+
+## [2026-10-20] AUDIT v2 — freePow: POW jembatan teleport ke tanah (pola kompensasi tinggi kambuh)
+
+**Kesalahan:** `freePow` memasang `pw.y = GROUND_Y - 26` tanpa syarat saat tinggi POW berubah 20 → 26. Untuk POW di atas jembatan (kaki di dek y=138), kakinya melompat ke 192 — POW terlihat teleport menembus dek ke tanah/air. Ini pola persis koreksi lama "kompensasi y saat tinggi berubah", kambuh karena v2 menambahkan POW berplatform tanpa meninjau fungsi pembebas dari v1 (di v1 semua POW di tanah sehingga rumusnya kebetulan benar).
+
+**Penyebab:** Rumus absolut (posisi tanah) dipakai untuk perubahan yang seharusnya relatif (jaga kaki).
+
+**Perbaikan:** `pw.y = pw.y + pw.h - 26` sebelum `pw.h = 26` — kaki tetap di permukaan yang sama untuk semua POW (di tanah hasilnya identik dengan rumus lama). Terverifikasi uji: kaki POW jembatan tetap 138 setelah dibebaskan.
+
+**Pelajaran untuk agen lain:** Saat mengganti tinggi/lebar entitas, selalu jangkar ke titik yang tidak boleh bergerak (kaki untuk karakter berdiri) — dan curigai setiap rumus absolut warisan saat konteks baru (platform, kendaraan) ditambahkan.
+
+## [2026-10-20] AUDIT v2 — Reaksi berantai tong tidak pernah terpicu pada tata letak kiriman
+
+**Kesalahan:** Fitur "tong meledak berantai" terdokumentasi, tetapi tong kiriman berada di x=1010, 1150, 2200: jarak antar-tong terdekat 140px, sedangkan jangkauan rantai ledakan besar hanya 42px dari pusat ke pusat. Tidak ada pasangan tong yang bisa saling memicu; fiturnya mati secara data. Kode rantainya sendiri benar (terverifikasi pada jarak ≤42).
+
+**Penyebab:** Angka tata letak dan angka jangkauan dipilih terpisah tanpa uji keterjangkauan antar-tong.
+
+**Perbaikan:** Tong kedua digeser 1150 → 1050 (pusat-ke-pusat 40 ≤ 42): satu pasangan berantai kini benar-benar ada di jalur pemain. Uji ulang pada tata letak kiriman: menembak tong pertama menghancurkan tong kedua, dan pemain yang berdiri di antaranya tetap tidak terluka (ledakan tong pemain tidak pernah `hostile`).
+
+**Pelajaran untuk agen lain:** Fitur yang bergantung jarak/ambang wajib diuji pada DATA kiriman, bukan hanya pada unit yang diatur berdekatan.
+
+## [2026-10-20] AUDIT v2 — Kode mati kambuh di v2 (fungsi yatim, sprite tak terpakai, cabang ganda)
+
+**Kesalahan:** (1) `groundTopAt()` terdefinisi tetapi tidak pernah dipanggil. (2) `SPR.pRun` (6 canvas) dan `SPR.splash` + `drawSplash()` dibangun setiap boot tetapi tidak pernah dirujuk `game.js` (percikan air memakai partikel persegi). (3) Di `drawPlayer`, cabang lari memasang sprite yang sama dua kali — komentarnya menjanjikan komposisi berbeda ("idle-gun") yang tidak pernah ada.
+
+**Penyebab:** Pola yang sama dengan entri dead code v2 sebelumnya: kode ditulis besar-besaran, pembersihan akhir hanya mengejar yang teringat.
+
+**Perbaikan:** Ketiganya dihapus/disederhanakan (perilaku visual identik; canvas boot turun 207 → 197). Kehadiran/ketidakhadiran dibuktikan grep dua arah (definisi & rujukan) sebelum menghapus.
+
+**Pelajaran untuk agen lain:** Sebelum menghapus "kode mati", buktikan nol rujukan dengan grep di SEMUA berkas; sebelum mengklaim bersih, grep juga pola: fungsi tanpa pemanggil, kunci objek tanpa pembaca, penugasan ganda identik.
+
+## [2026-10-20] AUDIT v2 — Terverifikasi BUKAN bug (agar tidak "diperbaiki" ulang)
+
+- **Titik rawan 4 (surfT Monster Laut):** state monster konsisten setelah pemain mati di tengah fase — fase berganti normal, `surfT` tereset per fase, dan monster terbukti menembak lagi pada fase berikutnya (uji: mati pada phaseT 1,1 → semburan terhitung ≥1 dalam 7 dtk pasca-respawn). Semburan yang terlewat hanya pada fase berjalan, sesuai desain satu semburan per kemunculan.
+- **Titik rawan 5 (culling proyektil musuh):** aman untuk semua pola kiriman — diuji: roket pada camX+300, camX+370, dan camX−50 semuanya hidup; semua penembak hanya menembak saat di dalam/di tepi layar; rudal Titan lahir di dalam arena terkunci. Peringatan tetap berlaku untuk penembak luar-layar di masa depan.
+- **Pengaturan & fullscreen & overlay:** terbukti uji — localStorage `pamong-settings` terbaca saat boot & tertulis saat toggle; kanal Musik/SFX benar-benar terpisah; getar aman di desktop; penolakan `requestFullscreen`/`orientation.lock` tidak merusak alur mulai; pause orientasi tidak menimpa pause manual; resume membersihkan flag tepi.
+- **SV-001:** terbukti uji — masuk hanya dengan ATAS, Cannon = tombol granat, armor 3 → terlontar hidup + kebal, keluar BAWAH+B, Slug terkurung arena bos, suara rantai memakai satu interval yang dibersihkan.
