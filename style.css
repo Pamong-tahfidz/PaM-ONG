@@ -1,11 +1,15 @@
-/* PaM-ONG — style.css (v2) */
+/* PaM-ONG — style.css (v3)
+   Tata letak FULL-BLEED: pembungkus memenuhi 100dvw x 100dvh tanpa
+   margin/padding; canvas diskalakan contain (seluruh area 480x270
+   selalu tampil); sisa ruang diisi gradasi senja senada langit game,
+   BUKAN hitam polos. Kontrol sentuh & tombol pojok berada DI DALAM
+   panggung. Mode putar fallback memakai kelas body.rot. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0b0b10;
   touch-action: none;
   overscroll-behavior: none;
   -webkit-user-select: none;
@@ -16,17 +20,38 @@ html, body {
 }
 
 body {
+  /* Ekstensi bertema: gradasi senja yang sama dengan langit di game */
+  background: linear-gradient(180deg, #26324f 0%, #4a3560 30%, #6d4260 48%, #c97b4a 76%, #eeb26a 100%);
+}
+
+#stageWrap {
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Panggung: ukuran diatur JS (skala integer bila muat, selain itu fit) */
+/* Fallback rotasi CSS: bungkus diputar 90 derajat, lebar/tinggi tertukar
+   (dvh<->dvw) sehingga panggung tampil miring memenuhi layar portrait. */
+body.rot #stageWrap {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 100dvh;
+  height: 100dvw;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+/* Panggung: ukuran piksel diatur JS (computeStageSize — contain) */
 #stage {
   position: relative;
   flex: 0 0 auto;
   background: #101018;
-  box-shadow: 0 0 0 2px #2a2a33, 0 0 42px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 0 0 2px rgba(32, 36, 42, 0.85), 0 0 42px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
 }
 
 #stage canvas {
@@ -40,6 +65,37 @@ body {
 }
 #hud { pointer-events: none; }
 
+/* ---------- Tombol pojok (PENUH / PUTAR / bisu / jeda) -------------- */
+#cornerBtns {
+  position: absolute;
+  top: calc(6px + env(safe-area-inset-top));
+  right: calc(6px + env(safe-area-inset-right));
+  display: flex;
+  gap: 6px;
+  z-index: 20;
+}
+.cbtn {
+  min-width: 44px;
+  height: 44px;
+  padding: 3px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(20, 20, 28, 0.55);
+  color: #fff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+.cbtn span { font-size: 7px; letter-spacing: 0.5px; color: #d8d4c4; }
+.cbtn.on { background: rgba(242, 194, 48, 0.55); border-color: #f2c230; }
+.cbtn.hidden { display: none; }
+
 /* ---------- Layar-layar (judul / pengaturan / jeda / ringkasan) ------ */
 .screen {
   position: absolute;
@@ -48,11 +104,11 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
   background: rgba(10, 10, 18, 0.85);
   color: #f2f0e6;
   text-align: center;
-  padding: 8px;
+  padding: 10px;
   z-index: 5;
   overflow: hidden;
 }
@@ -61,43 +117,43 @@ body {
 .title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 #avatarCanvas {
-  width: 64px;
-  height: 64px;
+  width: 96px;
+  height: 96px;
   image-rendering: pixelated;
   border-radius: 50%;
 }
 .title-text { text-align: left; }
 
 .logo {
-  font-size: 38px;
+  font-size: 46px;
   letter-spacing: 3px;
   color: #f2c230;
   text-shadow: 3px 3px 0 #932222, -1px -1px 0 #20242a;
   line-height: 1;
 }
-.logo.small { font-size: 24px; }
-.tagline { color: #7ec8e3; font-weight: bold; letter-spacing: 2px; font-size: 11px; margin-top: 4px; }
+.logo.small { font-size: 28px; }
+.tagline { color: #7ec8e3; font-weight: bold; letter-spacing: 2px; font-size: 13px; margin-top: 5px; }
 
 .controls-box {
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: #d8d4c4;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 5px 10px;
+  padding: 6px 12px;
   max-width: 96%;
 }
 .controls-box b { color: #f2c230; }
 
-.btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
-.btn-col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.btn-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.btn-col { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 
 .big-btn {
   font-family: inherit;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: bold;
   letter-spacing: 2px;
   color: #20242a;
@@ -105,28 +161,28 @@ body {
   border: 0;
   border-bottom: 4px solid #b8912a;
   border-radius: 6px;
-  padding: 9px 22px;
-  min-height: 46px;
+  padding: 10px 24px;
+  min-height: 48px;
   cursor: pointer;
 }
 .big-btn:active { transform: translateY(2px); border-bottom-width: 2px; }
 
 .small-btn {
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: bold;
   letter-spacing: 1px;
   color: #f2f0e6;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
-  padding: 7px 14px;
-  min-height: 40px;
+  padding: 8px 16px;
+  min-height: 42px;
   cursor: pointer;
 }
 
-.hint { font-size: 10px; color: #8f9296; }
-.stats { font-size: 13px; line-height: 1.9; color: #f2f0e6; }
+.hint { font-size: 11px; color: #8f9296; }
+.stats { font-size: 15px; line-height: 1.9; color: #f2f0e6; }
 .stats b { color: #f2c230; }
 
 /* ---------- Pengaturan ---------- */
@@ -136,82 +192,37 @@ body {
   gap: 4px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 10px 16px;
-  min-width: 240px;
+  padding: 12px 18px;
+  min-width: 260px;
 }
 .set-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 18px;
-  font-size: 13px;
+  gap: 20px;
+  font-size: 14px;
   font-weight: bold;
   color: #f2f0e6;
-  padding: 5px 0;
+  padding: 6px 0;
   cursor: pointer;
 }
 .set-row input[type="checkbox"] {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   accent-color: #f2c230;
   cursor: pointer;
 }
 
-/* ---------- Overlay putar HP ---------- */
-#rotateOverlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: rgba(8, 8, 14, 0.92);
-  color: #f2f0e6;
-  z-index: 30;
-  text-align: center;
-  font-weight: bold;
-  letter-spacing: 2px;
-  font-size: 16px;
-}
-#rotateOverlay.hidden { display: none; }
-.rotate-icon { font-size: 44px; color: #f2c230; animation: spinPulse 1.6s ease-in-out infinite; }
-.rotate-sub { font-size: 11px; color: #8f9296; letter-spacing: 1px; }
-@keyframes spinPulse {
-  0% { transform: rotate(0deg); }
-  50% { transform: rotate(90deg); }
-  100% { transform: rotate(0deg); }
-}
-
-/* ---------- Tombol jeda ---------- */
-#pauseBtn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(20, 20, 28, 0.55);
-  color: #fff;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: bold;
-  cursor: pointer;
-  z-index: 8;
-}
-#pauseBtn.hidden { display: none; }
-
-/* ---------- Kontrol sentuh ---------- */
+/* ---------- Kontrol sentuh (di dalam panggung, menindih) ------------ */
 #touchControls {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   display: none;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 0 10px 12px;
+  padding: 0 calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
   pointer-events: none;
   z-index: 10;
 }
@@ -220,8 +231,8 @@ body.has-touch #touchControls { display: flex; }
 
 #dpad {
   display: grid;
-  grid-template-columns: repeat(3, 56px);
-  grid-template-rows: repeat(2, 56px);
+  grid-template-columns: repeat(3, 58px);
+  grid-template-rows: repeat(2, 58px);
   gap: 4px;
   pointer-events: none;
 }
@@ -238,14 +249,14 @@ body.has-touch #touchControls { display: flex; }
 }
 
 .tbtn {
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.13);
+  background: rgba(20, 20, 28, 0.38);
   color: #fff;
   font-family: inherit;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: bold;
   pointer-events: auto;
   touch-action: none;
@@ -256,21 +267,5 @@ body.has-touch #touchControls { display: flex; }
   line-height: 1;
 }
 .tbtn span { font-size: 7px; letter-spacing: 0.5px; color: #d8d4c4; margin-top: 2px; }
-.tbtn.big { width: 68px; height: 68px; font-size: 20px; background: rgba(207, 52, 52, 0.35); border-color: rgba(255, 120, 120, 0.6); }
+.tbtn.big { width: 72px; height: 72px; font-size: 21px; background: rgba(207, 52, 52, 0.35); border-color: rgba(255, 120, 120, 0.6); }
 .tbtn.on { background: rgba(242, 194, 48, 0.5); border-color: #f2c230; }
-
-/* ---------- Tombol bisu ---------- */
-#muteBtn {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(20, 20, 28, 0.6);
-  color: #fff;
-  font-size: 17px;
-  cursor: pointer;
-  z-index: 20;
-}

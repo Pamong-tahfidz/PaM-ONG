@@ -299,3 +299,89 @@ Format entri: `## [tanggal] Judul singkat` lalu **Kesalahan**, **Penyebab**, **P
 - **Titik rawan 5 (culling proyektil musuh):** aman untuk semua pola kiriman — diuji: roket pada camX+300, camX+370, dan camX−50 semuanya hidup; semua penembak hanya menembak saat di dalam/di tepi layar; rudal Titan lahir di dalam arena terkunci. Peringatan tetap berlaku untuk penembak luar-layar di masa depan.
 - **Pengaturan & fullscreen & overlay:** terbukti uji — localStorage `pamong-settings` terbaca saat boot & tertulis saat toggle; kanal Musik/SFX benar-benar terpisah; getar aman di desktop; penolakan `requestFullscreen`/`orientation.lock` tidak merusak alur mulai; pause orientasi tidak menimpa pause manual; resume membersihkan flag tepi.
 - **SV-001:** terbukti uji — masuk hanya dengan ATAS, Cannon = tombol granat, armor 3 → terlontar hidup + kebal, keluar BAWAH+B, Slug terkurung arena bos, suara rantai memakai satu interval yang dibersihkan.
+
+## [2026-10-20] v3 — Baris peta piksel melebihi lebar kisi (helm musuh & typo spasi)
+
+**Kesalahan:** Saat menggambar ulang sprite skala v3, dua baris peta piksel rusak: (1) baris helm `enemyTorso3` berisi 37 karakter pada kisi 36 kolom — komposisi torso musuh akan bergeser 1px dan terpotong; (2) baris sprite mati rata (`DIE_FLAT`) mengandung spasi di tengah string (`'pppppppo oo...'`) sehingga lebar baris berubah dan satu piksel kulit hilang. Keduanya lolos dari `node --check` karena secara sintaks valid.
+
+**Penyebab:** Peta piksel ditulis tangan dalam jumlah besar; lebar baris tidak pernah diverifikasi mesin — mata manusia tidak bisa menghitung 36 karakter secara andal.
+
+**Perbaikan:** Ditulis validator dimensi sekali jalan yang memeriksa SETIAP peta terhadap lebar/tinggi yang diharapkan sebelum komposisi dibangun. Baris helm dikurangi 1 titik; spasi pada `DIE_FLAT` dihapus. Setelah perbaikan validator menyatakan semua dimensi OK, dan validator yang sama dipakai ulang untuk seluruh sprite v3 (pemain, musuh, POW, bos, ubin, latar).
+
+**Pelajaran untuk agen lain:** Untuk sprite peta piksel, `node --check` TIDAK cukup — selalu jalankan validator lebar/tinggi per baris. Spasi di tengah string baris adalah bug senyap: ia tidak mengubah sintaks, hanya geometri.
+
+## [2026-10-20] v3 — Ekspektasi validator yang salah (lebar POW 24 vs 22)
+
+**Kesalahan:** Validator dimensi v3 awalnya menuntut sprite POW selebar 24px dan melaporkan "kegagalan" pada berkas yang sebenarnya benar: peta POW memang digambar 22px lebar (dengan hitbox 19px di `game.js`, konsisten). Satu-satunya yang salah adalah angka ekspektasi di alat uji.
+
+**Penyebab:** Angka ekspektasi disalin dari ingatan ukuran v2 yang dibulatkan, bukan dihitung dari peta yang digambar.
+
+**Perbaikan:** Lebar setiap baris peta POW dihitung ulang manual per baris (22), ekspektasi validator dikoreksi ke 22, dan seluruh rujukan silang (hitbox `POW_DEFS`/`buildLevel`, kompensasi `freePow`) diverifikasi terhadap angka yang sama.
+
+**Pelajaran untuk agen lain:** Saat alat uji berteriak, curigai alat ujinya juga. Tetapkan angka dari sumber primer (peta/konstanta di berkas), bukan dari ingatan rencana — dan catat mana yang dikoreksi: kode, atau ujinya.
+
+## [2026-10-20] v3 — "Kegagalan" uji semu karena melanggar invariant progresi game
+
+**Kesalahan:** Rangkaian uji asap v3 pertama melaporkan 10 kegagalan yang tampak seperti bug game, padahal semuanya artefak cara uji meneleportasi pemain & membaca konstanta dari ingatan: (1) Titan "tidak menerima damage laser" — uji menaruh Titan di x=1000, tetapi `updateTitan` mengklamp Titan ke arena sahnya (4250..4496) sehingga peluru menembus ruang kosong; (2) pola Titan "tidak pernah lahir" — gelombang/rudal dibuang culling berbasis kamera karena `G.camX` belum menetap di arena; (3) pemain "terdorong" ke x=3679 saat uji Titan — uji melompati Di-Cokka (yang belum mati) sehingga klamp dinding Cokka yang sah menahan pemain; (4) uji jongkok mengasumsikan kaki di GROUND_Y padahal pemain baru saja mendarat di DEK JEMBATAN (platform satu-arah menangkap lompatan dari atas); (5) ekspektasi angka dari ingatan: TITAN_HP disangka 300 (berkas: 240, skala ×1,2 dari v2), pool granat disangka 24 (berkas: 64).
+
+**Penyebab:** Uji ditulis dari rencana & ingatan, bukan dari invariant kode yang dikirim: klamp arena bos, culling kamera, urutan progresi antar-bos, dan konstanta CONFIG.
+
+**Perbaikan:** Setiap kegagalan diisolasi per fungsi update (memanggil `updateSea`/`updateTitan`/`updateProjectiles` satu-satu dan mengintip state) sebelum satu baris kode game pun diubah — hasilnya: nol perubahan kode game; semua perbaikan ada di uji (Titan diuji di dalam arenanya, `G.camX` disetel ke arena, Cokka ditandai mati sebelum uji Titan, posisi uji memakai permukaan yang benar, angka dibaca dari `CONFIG`). Setelah itu 149/149 uji lulus.
+
+**Pelajaran untuk agen lain:** Teleportasi dalam uji melanggar invariant yang dijaga gameplay (arena lock, progresi bos, kamera). Bila uji gagal secara aneh, isolasi per fungsi dan buktikan dulu apakah yang salah kode atau panggung ujinya — jangan "memperbaiki" kode yang benar agar cocok dengan uji yang salah.
+
+## [2026-10-20] AUDIT v3 — Kamera arena dipaku di tepi kiri: 255px arena Monster Laut tidak terlihat
+
+**Kesalahan:** Saat `arenaLock` aktif, target kamera dipaku ke `minX - 15`. Untuk arena Monster Laut {40, 760} kamera menetap di camX=25 (jendela 25..505), padahal pemain boleh berjalan sampai x=738 dan titik muncul kepala terjauh di 580: pemain bisa berjalan KELUAR LAYAR sepenuhnya, kepala di titik 580 tidak terlihat, dan bola airnya mati ter-cull seketika (lahir di x=580 > camX+540=565). Cacat yang sama lebih ringan di dua arena lain (tepi kanan Di-Cokka/Titan bisa 29px di luar layar). Terukur uji audit: pemain di dinding kanan arena laut berada di screen x=713 (viewport 480).
+
+**Penyebab:** "Kamera terkunci" ditafsirkan sebagai "kamera diam di tepi kiri arena", bukan "kamera tidak pernah keluar dari rentang arena". Rumus warisan ini tidak pernah diuji terhadap lebar viewport baru 480 (di 320 cacatnya lebih kecil dan lolos audit v2).
+
+**Perbaikan:** Target kamera kini target ikuti-pemain yang DIKLAMP ke rentang [minX−15, maxX−VIEW_W+15] arena. Terverifikasi uji: pemain di dinding kanan arena laut tetap terlihat penuh (screen x ≤ 460), bola air dari titik 580 lahir & hidup, seluruh badan Titan (tepi kanan) di dalam layar.
+
+**Pelajaran untuk agen lain:** Setiap rumus kamera/arena wajib diuji pada EMPAT sudut: pemain di minX, pemain di maxX, bos di posisi ekstremnya, proyektil terjauh bos — semuanya harus berada di dalam viewport pada resolusi yang dikirim.
+
+## [2026-10-20] AUDIT v3 — Salvo rudal Titan selalu mendarat ~30% jalan (pola mati secara angka)
+
+**Kesalahan:** `titanMissile` memakai `vx = (tx - r.x) / 1.25 * 0.5` — mengandaikan waktu terbang 1,25s lalu mengoreksi setengahnya. Waktu terbang NYATA rudal (vy0 −225, gravitasi 0.8·GRAVITY=1080, jatuh 135px dari titan.y+12 ke tanah) adalah 0,75s, jadi rudal hanya menempuh 0,3× jarak ke sasaran. Terukur: salvo ke pemain diam pada jarak tempur 150px mendarat dengan |dx| minimum 79px dari pusat pemain — radius ledakan hanya 45, jadi pola rudal TIDAK PERNAH bisa mengenai pemain yang diam sekalipun. Kelas cacat yang sama dengan "rantai tong tidak terpicu" audit v2: fitur mati secara angka, bukan secara kode.
+
+**Penyebab:** Konstanta tFly ditebak dari rasa, bukan diturunkan dari persamaan gerak yang dipakai fungsi update rudal itu sendiri (gravitasi & ketinggian lahirnya ada di berkas yang sama).
+
+**Perbaikan:** `vx = (tx - r.x) / 0.75` dengan komentar penurunan 0,75s di kode. Terukur ulang: min |dx| = 9px — salvo mendarat tepat di posisi pemain; pemain harus bergerak/melompat untuk menghindar, sebagaimana mestinya pola bos.
+
+**Pelajaran untuk agen lain:** Untuk proyektil berlintasan lengkung yang "menarget posisi", turunkan waktu terbang dari vy0, gravitasi, dan beda ketinggian yang BENAR-BENAR dipakai update-nya, lalu uji: target diam pada jarak tempur wajar harus terkena. Pola serangan yang tidak bisa mengenai target diam adalah bug, bukan "tuning".
+
+## [2026-10-20] AUDIT v3 — Laser menembus musuh pada fallback 30fps (tunneling lattice)
+
+**Kesalahan:** Pada STEP 1/30 (fallback fps), sinar laser bergerak 840/30 = 28px per langkah, sedangkan jendela tabrakan musuh selebar 23+5 = 28px dengan pertidaksamaan ketat — tepat SATU fase lattice membuat sinar melompat dari `e.x-5` ke `e.x+23` tanpa pernah tumpang tindih: tembakan laser menembus musuh tanpa damage. Terukur uji audit: 1 dari 14 fase offset gagal pada dt=1/30 (pada 60fps langkah 14px < jendela, aman).
+
+**Penyebab:** Kotak tabrakan laser adalah kotak TITIK di posisi akhir langkah; kecepatan×langkah terbesar tidak pernah dibandingkan dengan lebar target tersempit.
+
+**Perbaikan:** Kotak laser kini menutupi SEGMEN yang ditempuh langkah itu (dari posisi sebelum integrasi ke posisi sesudah, +5/+4). Mekanisme satu-damage-per-sinar (nomor seri) tidak berubah. Terukur ulang: 0 miss dari 14 fase pada dt=1/30.
+
+**Pelajaran untuk agen lain:** Setiap proyektil wajib memenuhi: kecepatan × dt_terbesar ≤ lebar target tersempit + lebar kotak proyektil — atau gunakan kotak sapuan segmen. Uji tunneling harus memakai dt fallback (1/30), bukan hanya 60fps.
+
+## [2026-10-20] AUDIT v3 — Sisa baris peta piksel ragged (klaim validator v3 tidak lengkap)
+
+**Kesalahan:** Validator dimensi agen upgrade menyatakan semua peta OK, tetapi validator audit menemukan 7 baris ragged: `BODY_DIAG` baris 3 selebar 35 (kisi 36), `DIE_FLAT` baris 5 selebar 53 (kisi 54), dan 5 baris lengan `enemySprite3` selebar 35 (kisi 36). Ketiganya selamat karena `spr()` mengambil lebar MAKS baris sebagai lebar canvas — baris yang lebih pendek tidak menggeser apa pun, hanya diam-diam lebih sempit.
+
+**Penyebab:** Validator v3 memeriksa lebar canvas HASIL (yang selalu = maks) dan/atau sebagian peta, bukan SETIAP baris terhadap lebar kisi yang diharapkan.
+
+**Perbaikan:** Ketujuh baris ditambah tepat 1 karakter '.' — yang kurang memang selalu padding transparan di tepi kanan (piksel opak terakhir jauh dari tepi), jadi nol perubahan visual; invariant "setiap baris selebar kisi" kini benar-benar berlaku dan validator audit (78 peta terurai dari sumber) menyatakan 0 ragged.
+
+**Pelajaran untuk agen lain:** Validator peta piksel yang benar memeriksa PANJANG SETIAP BARIS terhadap kisi, bukan dimensi canvas hasil — canvas hasil selalu tampak benar karena memakai nilai maksimum.
+
+## [2026-10-20] AUDIT v3 — Diagnosis yang DITARIK: bola air Monster Laut (bukan tunneling)
+
+**Kesalahan:** Agen pengoreksi awalnya mencurigai bola air sulit ditembak jatuh karena tunneling kotak tangkap (interseksi tembakan beruntun baru terjadi pada langkah ke-46 dari 54) dan sempat memperlebar kotak tangkapnya menjadi 11×10.
+
+**Penyebab:** Diagnosis dibuat sebelum lintasannya diukur: bola air melengkung NAIK ke puncak y≈130 — jauh di atas garis tembak lurus pemain (y≈193) — dan baru turun memasuki garis tembak di fase akhir penerbangan. Jeda intersepsi adalah geometri busur, bukan kotak tabrak; pelebaran kotak tidak mengubah angka sama sekali (46 → 46).
+
+**Perbaikan:** Pelebaran kotak DIBATALKAN (kembali 7×7 seperti kiriman). Bukti final: bola ditembak jatuh oleh tembakan beruntun sebelum mengenai pemain, dan bola yang sama MEMBUNUH pemain diam bila tidak ditembak — mekanik "bisa ditembak jatuh" terbukti hidup apa adanya.
+
+**Pelajaran untuk agen lain:** Ukur lintasan (posisi per langkah) sebelum menyalahkan ukuran kotak. Perbaikan yang tidak mengubah angka terukur bukanlah perbaikan — tarik kembali dan catat penarikannya di sini.
+
+## [2026-10-20] AUDIT v3 — Terverifikasi BUKAN bug (agar tidak "diperbaiki" ulang)
+
+- **Timer habis saat state 'dead':** timer memang tertahan di 0 selama animasi mati, tetapi tick pertama setelah respawn selalu tertutup kebal respawn 2 detik (killPlayer no-op) dan timer direset ke 30 oleh cabang yang sama. Teruji empiris: pemain yang mati dengan timer=1 mati tepat satu kali. Berbeda dari kasus Slug audit v2 karena di sana pemain langsung bisa dikendalikan tanpa kebal.
+- **Keadilan spawn penembak:** lemparan granat pertama terjadi saat musuh sudah di sx=88 (di dalam layar) dan roket bazooka pertama di sx=55 — syarat spawn (camX+525) + ambang jarak tembak membuat proyektil pertama selalu lahir terlihat; klaim "menembak dari luar layar" tidak terbukti pada data kiriman.
+- **Reskala ×1,5 konsisten:** lompatan terukur 159,3px (teori 163,8); seluruh 9 transisi platform jalur atas/jembatan terjangkau dalam simulasi input nyata; Slug bisa lewat DI BAWAH maupun lompat KE ATAS jembatan 2; tidak ada konstanta era 320×224 yang bocor (grep angka mencurigakan hanya mengenai koordinat data level); 97 fungsi game.js tanpa yatim, 42 kunci CONFIG semuanya terpakai, nol kolisi nama antar-berkas.

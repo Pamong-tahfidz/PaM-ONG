@@ -2,22 +2,32 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>PaM-ONG v2 — Misi 1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>PaM-ONG v3 — Misi 1</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="stageWrap">
 <div id="stage">
-  <canvas id="game" width="320" height="224"></canvas>
-  <canvas id="hud" width="320" height="224"></canvas>
+  <canvas id="game" width="480" height="270"></canvas>
+  <canvas id="hud" width="480" height="270"></canvas>
+
+  <!-- Tombol pojok: PENUH & PUTAR adalah TOMBOL MANUAL (tidak ada
+       fullscreen/rotasi otomatis di game ini). Selalu tersedia. -->
+  <div id="cornerBtns">
+    <button id="fsBtn" class="cbtn" aria-label="Layar penuh manual">&#9974;<span>PENUH</span></button>
+    <button id="rotBtn" class="cbtn" aria-label="Putar ke landscape manual">&#8635;<span>PUTAR</span></button>
+    <button id="muteBtn" class="cbtn" aria-label="Bisu / bunyikan">&#128266;</button>
+    <button id="pauseBtn" class="cbtn hidden" aria-label="Jeda">| |</button>
+  </div>
 
   <!-- Layar judul -->
   <div id="titleScreen" class="screen">
     <div class="title-row">
-      <canvas id="avatarCanvas" width="72" height="72"></canvas>
+      <canvas id="avatarCanvas" width="108" height="108"></canvas>
       <div class="title-text">
         <h1 class="logo">PaM&#8209;ONG</h1>
-        <p class="tagline">MISI 1 &mdash; OPERASI SENJA &bull; v2</p>
+        <p class="tagline">MISI 1 &mdash; OPERASI SENJA &bull; v3</p>
       </div>
     </div>
     <div class="controls-box">
@@ -25,20 +35,20 @@
       <p><b>A &mdash; TEMBAK</b> (tahan = auto): Z / J &bull; <b>B &mdash; LOMPAT</b>: X / K &bull; <b>C &mdash; GRANAT</b>: C / L</p>
       <p>Naik SV-001: dekati tank lalu tekan &uarr;. Di dalam tank: A Vulcan, C Meriam, &darr;+B keluar.</p>
       <p>Urutan misi: Monster Laut &rarr; SV-001 &rarr; Di-Cokka &rarr; ROBOT TITAN. Bebaskan POW untuk senjata!</p>
+      <p>Layar penuh &amp; putar landscape = tombol <b>&#9974; PENUH</b> dan <b>&#8635; PUTAR</b> di pojok kanan atas &mdash; manual, tidak otomatis.</p>
     </div>
     <div class="btn-row">
       <button id="startBtn" class="big-btn">MULAI MISI</button>
       <button id="settingsBtn" class="small-btn">PENGATURAN</button>
-      <button id="fsBtn" class="small-btn">LAYAR PENUH</button>
     </div>
     <p class="hint">Enter / Spasi juga bisa &bull; M = bisu &bull; P / Esc = jeda</p>
   </div>
 
-  <!-- Menu pengaturan -->
+  <!-- Menu pengaturan (hanya Musik / SFX / Getar — opsi layar otomatis
+       sudah dihapus; layar diatur tombol manual di pojok) -->
   <div id="settingsScreen" class="screen hidden">
     <h1 class="logo small">PENGATURAN</h1>
     <div class="settings-box">
-      <label class="set-row"><span>Layar Penuh saat mulai</span><input type="checkbox" id="optFullscreen"></label>
       <label class="set-row"><span>Musik</span><input type="checkbox" id="optMusic"></label>
       <label class="set-row"><span>Suara (SFX)</span><input type="checkbox" id="optSfx"></label>
       <label class="set-row"><span>Getar</span><input type="checkbox" id="optVibrate"></label>
@@ -64,32 +74,22 @@
     <button id="menuBtn" class="small-btn">KE JUDUL</button>
   </div>
 
-  <!-- Overlay putar HP -->
-  <div id="rotateOverlay" class="hidden">
-    <div class="rotate-icon">&#8635;</div>
-    <p>PUTAR HP ANDA</p>
-    <p class="rotate-sub">Game ini dimainkan miring (landscape)</p>
-  </div>
-
-  <button id="pauseBtn" class="hidden" aria-label="Jeda">| |</button>
-</div>
-
-<!-- Kontrol sentuh -->
-<div id="touchControls">
-  <div id="dpad">
-    <button class="tbtn" id="btnUp" aria-label="Atas">&#9650;</button>
-    <button class="tbtn" id="btnLeft" aria-label="Kiri">&#9664;</button>
-    <button class="tbtn" id="btnDown" aria-label="Bawah">&#9660;</button>
-    <button class="tbtn" id="btnRight" aria-label="Kanan">&#9654;</button>
-  </div>
-  <div id="abtns">
-    <button class="tbtn" id="btnC" aria-label="Granat">C<span>GRANAT</span></button>
-    <button class="tbtn" id="btnB" aria-label="Lompat">B<span>LOMPAT</span></button>
-    <button class="tbtn big" id="btnA" aria-label="Tembak">A<span>TEMBAK</span></button>
+  <!-- Kontrol sentuh: menindih DI DALAM panggung -->
+  <div id="touchControls">
+    <div id="dpad">
+      <button class="tbtn" id="btnUp" aria-label="Atas">&#9650;</button>
+      <button class="tbtn" id="btnLeft" aria-label="Kiri">&#9664;</button>
+      <button class="tbtn" id="btnDown" aria-label="Bawah">&#9660;</button>
+      <button class="tbtn" id="btnRight" aria-label="Kanan">&#9654;</button>
+    </div>
+    <div id="abtns">
+      <button class="tbtn" id="btnC" aria-label="Granat">C<span>GRANAT</span></button>
+      <button class="tbtn" id="btnB" aria-label="Lompat">B<span>LOMPAT</span></button>
+      <button class="tbtn big" id="btnA" aria-label="Tembak">A<span>TEMBAK</span></button>
+    </div>
   </div>
 </div>
-
-<button id="muteBtn" aria-label="Bisu / bunyikan">&#128266;</button>
+</div>
 
 <script src="sprites.js"></script>
 <script src="audio.js"></script>

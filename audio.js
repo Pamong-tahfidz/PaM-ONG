@@ -1,11 +1,11 @@
 'use strict';
 /* =====================================================================
-   PaM-ONG — audio.js (v2)
+   PaM-ONG — audio.js (v3 — mesin audio tidak berubah dari v2)
    Semua suara DISINTESIS dengan WebAudio: SFX pendek + loop musik
    chiptune sederhana (bass + melodi + noise perkusi).
    Audio hanya mulai setelah gestur pengguna (tombol MULAI).
-   v2: saklar musik & SFX terpisah (musicOn / sfxOn) untuk menu
-   PENGATURAN; setMuted() lama dipertahankan sebagai saklar utama.
+   Saklar musik & SFX terpisah (musicOn / sfxOn) untuk menu
+   PENGATURAN; setMuted() adalah saklar utama (tombol bisu).
    ===================================================================== */
 
 const AUDIO = {

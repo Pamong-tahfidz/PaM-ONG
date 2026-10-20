@@ -1,73 +1,77 @@
 'use strict';
 /* =====================================================================
-   PaM-ONG — game.js (v2)
-   Run-and-gun Metal Slug — Misi 1: Monster Laut -> SV-001 -> Di-Cokka
-   -> ROBOT TITAN. Vanilla Canvas 2D, fixed timestep, object pooling.
+   PaM-ONG — game.js (v3)
+   Run-and-gun Metal Slug — Misi 1 (5 zona): Monster Laut -> SV-001 ->
+   Di-Cokka -> ROBOT TITAN. Vanilla Canvas 2D, fixed timestep, pooling.
+   v3: dunia 480x270 & level 4600px; fullscreen/landscape = TOMBOL
+   MANUAL (tidak ada request/orientasi/pause otomatis); grafik & juice
+   dirombak (selongsong, debu kaki, percikan permukaan, hit-flash).
    Aturan proyek (docs/KOREKSI.md) WAJIB: pointer capture di tombol
    sentuh; refcount keyboard + reset saat blur; TANPA alokasi objek di
    jalur panas update/render (pakai coretan modul); kompensasi y saat
    tinggi entitas berubah; reset flag tepi & teks announcer di setiap
-   transisi state; tanpa konstanta yatim / dead code.
+   transisi state; penanda per-tembakan = nomor seri, bukan objek pool;
+   tanpa konstanta yatim / dead code / kolisi nama fungsi.
    ===================================================================== */
 
 /* ================= CONFIG — semua konstanta tuning di sini ========== */
 const CONFIG = {
-  VIEW_W: 320, VIEW_H: 224,
-  GROUND_Y: 192,
-  LEVEL_W: 3300,
-  GRAVITY: 900,
-  GRAVITY_UP: 620,               // gravitasi saat naik (lompatan melayang ala MS)
-  PLAYER_SPEED: 104,             // sedikit lebih kencang dari v1 (96)
-  PLAYER_JUMP_VEL: -368,         // sedikit lebih tinggi dari v1 (-345)
-  PLAYER_W: 13, PLAYER_H: 40, PLAYER_H_CROUCH: 30,
+  VIEW_W: 480, VIEW_H: 270,
+  GROUND_Y: 232,
+  LEVEL_W: 4600,
+  GRAVITY: 1350,
+  GRAVITY_UP: 930,               // gravitasi saat naik (lompatan melayang ala MS)
+  PLAYER_SPEED: 156,
+  PLAYER_JUMP_VEL: -552,
+  PLAYER_W: 20, PLAYER_H: 60, PLAYER_H_CROUCH: 45,
   START_LIVES: 3,
   START_GRENADES: 10,
   MAX_GRENADES: 30,
   TIMER_START: 99,
   RESPAWN_INVULN: 2.0,
-  MELEE_RANGE: 17,
+  MELEE_RANGE: 26,
   POW_BONUS: 5000,
   POW_ITEM_SCORE: 1000,
   BULLET_POOL: 260,
   EBULLET_POOL: 120,
   GRENADE_POOL: 64,
-  PARTICLE_POOL: 150,
+  PARTICLE_POOL: 240,
   FLAME_ZONE_POOL: 24,
   BURN_TICK: 0.25,               // jeda tick damage api membakar
   // --- SV-001 ---
-  SLUG_X: 1470,                  // posisi parkir SV-001 (±40% level)
-  SLUG_W: 40, SLUG_H: 34,
-  SLUG_SPEED: 84,
-  SLUG_JUMP_VEL: -300,
+  SLUG_X: 1980,                  // terparkir sebelum jembatan zona 3
+  SLUG_W: 60, SLUG_H: 51,
+  SLUG_SPEED: 126,
+  SLUG_JUMP_VEL: -450,
   SLUG_ARMOR: 3,
   SLUG_CANNON_START: 10,
   SLUG_CANNON_PICKUP: 5,
   VULCAN_RATE: 0.075,
   CANNON_RATE: 0.55,
-  // --- Monster Laut (mini-boss sungai) ---
+  // --- Monster Laut (mini-boss sungai zona 1) ---
   SEA_HP: 80,
   SEA_SCORE: 5000,
-  SEA_TRIGGER_X: 240,            // pemain melewati ini -> monster bangkit
-  // --- Di-Cokka (mini-boss tengah) ---
+  SEA_TRIGGER_X: 340,
+  // --- Di-Cokka (mini-boss kamp zona 4) ---
   BOSS_HP: 60,
   BOSS_SCORE: 1200,
-  COKKA_TRIGGER_X: 2330,
-  // --- Robot Titan (bos akhir) ---
+  COKKA_TRIGGER_X: 3400,
+  // --- Robot Titan (bos akhir zona 5) ---
   TITAN_HP: 240,
   TITAN_SCORE: 15000,
-  TITAN_TRIGGER_X: 2900,
+  TITAN_TRIGGER_X: 4150,
   TITAN_CORE_MULT: 2,            // damage x2 di core dada
   HITSTOP_BOSS: 0.06             // hit-stop 60ms saat bos meledak
 };
 
 const WEAPONS = {
-  handgun: { name: 'HANDGUN',          rate: 0.24, speed: 320, dmg: 1, diag: false },
-  hmg:     { name: 'HEAVY MACHINE GUN', rate: 0.085, speed: 320, dmg: 1, diag: true, ammo: 200 },
-  rocket:  { name: 'ROCKET LAUNCHER',   rate: 0.5,  speed: 185, dmg: 3, diag: false, ammo: 30 },
-  shotgun: { name: 'SHOTGUN',           rate: 0.6,  speed: 330, dmg: 1, diag: false, ammo: 30, pellets: 5, pelletLife: 0.23 },
-  flame:   { name: 'FLAME SHOT',        rate: 0.34, speed: 150, dmg: 1, diag: false, ammo: 30 },
-  laser:   { name: 'LASER GUN',         rate: 0.30, speed: 560, dmg: 2, diag: false, ammo: 200 },
-  chaser:  { name: 'ENEMY CHASER',      rate: 0.38, speed: 190, dmg: 2, diag: false, ammo: 40 }
+  handgun: { name: 'HANDGUN',          rate: 0.24, speed: 480, dmg: 1, diag: false },
+  hmg:     { name: 'HEAVY MACHINE GUN', rate: 0.085, speed: 480, dmg: 1, diag: true, ammo: 200 },
+  rocket:  { name: 'ROCKET LAUNCHER',   rate: 0.5,  speed: 278, dmg: 3, diag: false, ammo: 30 },
+  shotgun: { name: 'SHOTGUN',           rate: 0.6,  speed: 495, dmg: 1, diag: false, ammo: 30, pellets: 5, pelletLife: 0.23 },
+  flame:   { name: 'FLAME SHOT',        rate: 0.34, speed: 225, dmg: 1, diag: false, ammo: 30 },
+  laser:   { name: 'LASER GUN',         rate: 0.30, speed: 840, dmg: 2, diag: false, ammo: 200 },
+  chaser:  { name: 'ENEMY CHASER',      rate: 0.38, speed: 285, dmg: 2, diag: false, ammo: 40 }
 };
 const WEAPON_ANNOUNCE = {
   hmg: 'Heavy Machine Gun!', rocket: 'Rocket Launcher!', shotgun: 'Shotgun!',
@@ -80,8 +84,10 @@ const WEAPON_ICON = {
 // Rotasi hadiah acak POW (6 senjata spesial)
 const POW_WEAPON_TABLE = ['hmg', 'rocket', 'shotgun', 'flame', 'laser', 'chaser'];
 
-/* ================= Pengaturan (localStorage) ======================== */
-const SETTINGS = { fullscreen: true, music: true, sfx: true, vibrate: true };
+/* ================= Pengaturan (localStorage) ========================
+   v3: hanya Musik / SFX / Getar. Kunci lama 'fullscreen' dari v2
+   diabaikan dengan aman (loop hanya membaca kunci yang dikenal). */
+const SETTINGS = { music: true, sfx: true, vibrate: true };
 try {
   const raw = localStorage.getItem('pamong-settings');
   if (raw) {
@@ -112,76 +118,99 @@ const SPR = buildSprites(CONFIG.GROUND_Y);
   if (ac) { const actx = ac.getContext('2d'); actx.imageSmoothingEnabled = false; actx.drawImage(SPR.avatar, 0, 0); }
 })();
 
-/* ================= Data level ======================================= */
-// Sungai di x 40..470 (air di bawah GROUND_Y). Tepi timur sungai x=470.
-const RIVER = { x0: 40, x1: 470, waterY: CONFIG.GROUND_Y };
-// Jembatan kayu di atas sungai (platform panjang; juga rute bertarung laut)
-const BRIDGE = { x: 60, y: 138, w: 440, h: 12 };
+/* ================= Data level (5 zona, 4600px) ======================
+   Zona 1 pantai & sungai (0..720) — Monster Laut.
+   Zona 2 hutan & menara (720..1850) — jalur atas platform.
+   Zona 3 jembatan besar (1850..2750) — SV-001 sebelum jembatan.
+   Zona 4 kamp musuh (2750..3850) — tenda, gudang, Di-Cokka.
+   Zona 5 lapangan reruntuhan (3850..4600) — Robot Titan.            */
+const RIVER = { x0: 60, x1: 700, waterY: CONFIG.GROUND_Y };
+const RIVER2 = { x0: 2150, x1: 2750, waterY: CONFIG.GROUND_Y };
+const BRIDGE = { x: 90, y: 172, w: 640, h: 18, bridge: true };
+const BRIDGE2 = { x: 2150, y: 176, w: 600, h: 18, bridge: true };
 const PLATFORMS = [
-  BRIDGE,
-  { x: 560,  y: 148, w: 80, h: 10 },   // menara pengawas 1 berdiri di sini
-  { x: 900,  y: 150, w: 70, h: 10 },
-  { x: 1250, y: 142, w: 84, h: 10 },
-  { x: 1750, y: 150, w: 70, h: 10 },
-  { x: 2050, y: 144, w: 90, h: 10 },   // di atas tenda tersembunyi (POW); selaras lantai kabin menara 2 (143)
-  { x: 2620, y: 148, w: 80, h: 10 }
+  BRIDGE, BRIDGE2,
+  { x: 855,  y: 158, w: 120, h: 15 },   // platform menara 1 (lantai kabin menara = 158)
+  { x: 1080, y: 170, w: 110, h: 15 },   // jalur atas zona 2
+  { x: 1260, y: 150, w: 110, h: 15 },   // jalur atas + POW
+  { x: 1440, y: 170, w: 110, h: 15 },   // jalur atas (bazooka)
+  { x: 2520, y: 146, w: 110, h: 15 },   // di atas jembatan zona 3 (bazooka)
+  { x: 3375, y: 158, w: 120, h: 15 },   // platform menara 2 (kamp)
+  { x: 3950, y: 160, w: 110, h: 15 }    // reruntuhan zona 5 (bazooka)
 ];
 // Permukaan tanah per segmen: {from, kind:'grass'|'sand'|'dirt'}
 const GROUND_SEGMENTS = [
-  { from: 0, kind: 'sand' }, { from: 520, kind: 'grass' },
-  { from: 1500, kind: 'dirt' }, { from: 2350, kind: 'grass' }, { from: 2850, kind: 'sand' }
+  { from: 0, kind: 'sand' }, { from: 720, kind: 'grass' },
+  { from: 1900, kind: 'dirt' }, { from: 3850, kind: 'sand' }
 ];
-// Tenda bisa dihancurkan. idx 0 = tenda biasa; tenda di 2110 menyembunyikan POW.
-const TENT_DEFS = [{ x: 700, drop: 'laser' }, { x: 2110, drop: null, hidesPow: true }];
-// Menara pengawas (dekor kokoh, pos Grenade/Bazooka Soldier)
-const TOWER_DEFS = [{ x: 575 }, { x: 2062 }];
-// Tong bahan bakar — MELEDAK berantai bila ditembak (radius adil ke pemain)
-const FUEL_DEFS = [{ x: 1010 }, { x: 1050 }, { x: 2200 }];   // 1010 & 1050 berdekatan agar reaksi berantai (jangkauan 42) benar-benar bisa terjadi
+// Tenda (66x45, hp 4) & gudang (96x60, hp 8, big) bisa dihancurkan.
+const TENT_DEFS = [
+  { x: 1700, big: true, drop: 'flame' },
+  { x: 2850, drop: 'rocket' },
+  { x: 3050, drop: null, hidesPow: true },
+  { x: 3250, drop: 'shotgun' }
+];
+// Menara pengawas (dekor kokoh; musuh berdiri di platform di atasnya)
+const TOWER_DEFS = [{ x: 880 }, { x: 3400 }];
+// Tong bahan bakar — MELEDAK berantai (pasangan berjarak 60 <= jangkauan rantai 63)
+const FUEL_DEFS = [{ x: 1500 }, { x: 1560 }, { x: 2950 }, { x: 3010 }, { x: 3550 }];
 
 const ENEMY_DEFS = [
-  // Segmen sungai & jembatan (sebelum monster laut tumbang pemain tetap bisa lewat jembatan)
-  { type: 'rebel',   x: 210 }, { type: 'rebel', x: 300 },
-  { type: 'grenade', x: 610, y: 148 },                    // di menara 1 (platform 560)
-  { type: 'rebel',   x: 700 }, { type: 'shield', x: 790 },
-  { type: 'bazooka', x: 920, y: 150 },                    // platform 900
-  { type: 'rebel',   x: 1060 }, { type: 'rebel', x: 1180 },
-  { type: 'grenade', x: 1280, y: 142 },                   // platform 1250
-  { type: 'shield',  x: 1360 },
-  // Segmen SV-001
-  { type: 'rebel',   x: 1620 }, { type: 'bazooka', x: 1775, y: 150 },
-  { type: 'rebel',   x: 1860 }, { type: 'shield', x: 1950 },
-  { type: 'grenade', x: 2075, y: 144 },                   // menara 2 (platform 2050)
-  // Segmen Di-Cokka
-  { type: 'rebel',   x: 2260 }, { type: 'shield', x: 2380 },
-  { type: 'bazooka', x: 2645, y: 148 },
-  // Segmen Titan
-  { type: 'rebel',   x: 2760 }, { type: 'rebel', x: 2840 }
+  // Zona 1: di jembatan sungai (bertahan saat Monster Laut)
+  { type: 'rebel',   x: 300, y: 172 }, { type: 'rebel', x: 520, y: 172 },
+  // Zona 2: hutan & menara & jalur atas
+  { type: 'rebel',   x: 760 },
+  { type: 'grenade', x: 905, y: 158 },                    // menara 1
+  { type: 'shield',  x: 1010 },
+  { type: 'rebel',   x: 1120, y: 170 },                   // jalur atas
+  { type: 'rebel',   x: 1180 },
+  { type: 'bazooka', x: 1470, y: 170 },                   // jalur atas
+  { type: 'rebel',   x: 1560 }, { type: 'shield', x: 1700 },
+  // Zona 3: penjaga SV-001 & jembatan besar
+  { type: 'rebel',   x: 1920 }, { type: 'shield', x: 2050 },
+  { type: 'rebel',   x: 2380, y: 176 },                   // di jembatan 2
+  { type: 'bazooka', x: 2555, y: 146 },                   // platform di atas jembatan
+  // Zona 4: kamp musuh
+  { type: 'rebel',   x: 2820 }, { type: 'shield', x: 2920 },
+  { type: 'rebel',   x: 3180 }, { type: 'shield', x: 3320 },
+  { type: 'grenade', x: 3425, y: 158 },                   // menara 2
+  { type: 'rebel',   x: 3600 },
+  // Zona 5: reruntuhan
+  { type: 'rebel',   x: 3920 }, { type: 'rebel', x: 4020 },
+  { type: 'bazooka', x: 3985, y: 160 }
 ];
-const ENEMY_H = { rebel: 26, shield: 26, grenade: 26, bazooka: 26 };
+const ENEMY_H = { rebel: 39, shield: 39, grenade: 39, bazooka: 39 };
 const CRATE_DEFS = [
-  { x: 520, drop: 'flame' }, { x: 980, drop: 'hmg' },
-  { x: 1330, drop: 'grenade' }, { x: 1690, drop: 'cannon' },
-  { x: 1980, drop: 'chaser' }, { x: 2280, drop: 'rocket' },
-  { x: 2560, drop: 'shotgun' }
+  { x: 820, drop: 'flame' }, { x: 1380, drop: 'grenade' },
+  { x: 1900, drop: 'hmg' }, { x: 2080, drop: 'cannon' },
+  { x: 2780, drop: 'chaser' }, { x: 3300, drop: 'firebomb' },
+  { x: 3620, drop: 'shotgun' }
 ];
-// 5 POW: 1 di platform ATAS jembatan (y platform 138), 1 di balik tenda (dibebaskan saat tenda hancur, state 'hidden')
+// 7 POW: jembatan 1, hutan, jalur atas, jembatan 2, balik tenda, kamp, reruntuhan
 const POW_DEFS = [
-  { x: 250, y: 138 },      // di atas jembatan
-  { x: 640 },
-  { x: 1200 },
-  { x: 2125, hidden: true },
-  { x: 2480 }
+  { x: 380, y: 172 },
+  { x: 1150 },
+  { x: 1300, y: 150 },
+  { x: 2450, y: 176 },
+  { x: 3065, hidden: true },
+  { x: 3150 },
+  { x: 4200 }
 ];
 const DECOR = [
-  { kind: 'sign', x: 130 }, { kind: 'flag', x: 520 }, { kind: 'flag', x: 1560 },
-  { kind: 'sign', x: 1900 }, { kind: 'flag', x: 2710 }
+  { kind: 'sign', x: 150 }, { kind: 'flowers', x: 480 }, { kind: 'rock', x: 760 },
+  { kind: 'flowers', x: 950 }, { kind: 'wire', x: 1230 }, { kind: 'sandbags', x: 1330 },
+  { kind: 'flag', x: 1560 }, { kind: 'flowers', x: 1760 }, { kind: 'rock', x: 1960 },
+  { kind: 'sign', x: 2100 }, { kind: 'flag', x: 2760 }, { kind: 'sandbags', x: 2900 },
+  { kind: 'wire', x: 3120 }, { kind: 'rock', x: 3200 }, { kind: 'flowers', x: 3480 },
+  { kind: 'sign', x: 3660 }, { kind: 'ruin', x: 3900 }, { kind: 'flag', x: 3880 },
+  { kind: 'ruin', x: 4120 }, { kind: 'wire', x: 4240 }, { kind: 'rock', x: 4380 },
+  { kind: 'flowers', x: 4520 }
 ];
 
 /* ================= State permainan ================================== */
 const G = {
   screen: 'title',        // 'title' | 'play' | 'clear' | 'over'
   paused: false,
-  autoPaused: false,      // jeda karena orientasi portrait
   settingsReturn: 'title',// layar asal menu pengaturan: 'title' | 'pause'
   score: 0,
   lives: CONFIG.START_LIVES,
@@ -190,7 +219,7 @@ const G = {
   timerAcc: 0,
   elapsed: 0,
   camX: 0,
-  arenaLock: null,        // {minX, maxX} batas kamera+pemain saat bos aktif
+  arenaLock: null,        // {minX, maxX, boss} batas kamera+pemain saat bos aktif
   time: 0,
   shake: 0,
   hitStop: 0,             // sisa hit-stop (detik) — loop membeku sesaat
@@ -200,12 +229,12 @@ const G = {
 };
 
 const player = {
-  x: 60, y: CONFIG.GROUND_Y - CONFIG.PLAYER_H, w: CONFIG.PLAYER_W, h: CONFIG.PLAYER_H,
+  x: 40, y: CONFIG.GROUND_Y - CONFIG.PLAYER_H, w: CONFIG.PLAYER_W, h: CONFIG.PLAYER_H,
   vx: 0, vy: 0, face: 1, onGround: true, crouch: false,
   aim: 'h',               // 'h' | 'up' | 'diag' | 'down'
   state: 'normal',        // 'normal' | 'dead' | 'slug'
   deadT: 0, invulnT: 0, fireCd: 0, fireShowT: 0, throwT: 0, meleeT: 0,
-  animT: 0, weapon: 'handgun', ammo: 0,
+  animT: 0, weapon: 'handgun', ammo: 0, dustT: 0,
   grenades: CONFIG.START_GRENADES, grenadeType: 'normal', firebombs: 0
 };
 
@@ -218,27 +247,28 @@ const slug = {
   fireCd: 0, cannonCd: 0, trackT: 0, destroyed: false, hitT: 0
 };
 
-// Monster Laut (mini-boss sungai)
+// Monster Laut (mini-boss sungai). Kotak kepala mengikuti RUMUS GAMBAR:
+// y = GROUND_Y + 6 - 63*rise (satu sumber kebenaran, lihat KOREKSI.md).
 const sea = {
   state: 'dormant',       // dormant | fighting | dying | dead
   hp: CONFIG.SEA_HP, hitT: 0, phaseT: 0, curSpot: 0, surfT: 0, dieT: 0, laserMark: null,
-  head: { x: 0, y: CONFIG.GROUND_Y + 4, w: 44, h: 36, rise: 0 },  // rise 0..1; y kotak = GROUND_Y + 4 - 42*rise
+  head: { x: 0, y: CONFIG.GROUND_Y + 6, w: 66, h: 54, rise: 0 },
   tents: [
-    { x: 150, w: 14, h: 52, rise: 0, state: 'down', t: 0, warnX: 0 },
-    { x: 330, w: 14, h: 52, rise: 0, state: 'down', t: 1.2, warnX: 0 }
+    { x: 225, w: 21, h: 78, rise: 0, state: 'down', t: 0, warnX: 0 },
+    { x: 495, w: 21, h: 78, rise: 0, state: 'down', t: 1.2, warnX: 0 }
   ]
 };
-const SEA_SPOTS = [130, 260, 370];
+const SEA_SPOTS = [200, 390, 580];
 
-// Di-Cokka (mini-boss tengah)
+// Di-Cokka (mini-boss kamp)
 const cokka = {
-  x: 2520, y: CONFIG.GROUND_Y - 44, w: 64, h: 44, hp: CONFIG.BOSS_HP,
+  x: 3700, y: CONFIG.GROUND_Y - 66, w: 96, h: 66, hp: CONFIG.BOSS_HP,
   active: false, dead: false, dying: 0, dir: -1, moveT: 0, fireT: 2.2, hitT: 0, recoilT: 0, laserMark: null
 };
 
-// Robot Titan (bos akhir)
+// Robot Titan (bos akhir). Core dada: pita vertikal y+57..y+75.
 const titan = {
-  x: 3060, y: CONFIG.GROUND_Y - 100, w: 52, h: 100, hp: CONFIG.TITAN_HP,
+  x: 4400, y: CONFIG.GROUND_Y - 150, w: 78, h: 150, hp: CONFIG.TITAN_HP,
   active: false, dead: false, dying: 0, stateT: 0, atkT: 2.0, pattern: 0,
   burstN: 0, burstT: 0, armAng: Math.PI, stepT: 0, vx: 0, hitT: 0, flashCoreT: 0,
   introT: 0, laserMark: null
@@ -262,13 +292,13 @@ function poolGet(arr) {
   return null;
 }
 const bullets = makePool(CONFIG.BULLET_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, kind: 'bullet', life: 0, face: 1, laser: false, burn: 0, id: 0 }));
-let bulletSerial = 0;   // nomor seri unik tiap aktivasi peluru pemain — penanda laser per TEMBAKAN (bukan per objek pool, agar objek daur ulang tidak kebal)
+let bulletSerial = 0;   // nomor seri unik tiap aktivasi peluru pemain — penanda laser per TEMBAKAN (bukan per objek pool)
 const ebullets = makePool(CONFIG.EBULLET_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, water: false, gravity: 0 }));
 const erockets = makePool(24, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, blinkT: 0, titan: false }));
 const grenades = makePool(CONFIG.GRENADE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, hostile: false, shell: false, firebomb: false, fuse: 0 }));
-const particles = makePool(CONFIG.PARTICLE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: '#fff', grav: 0, boom: -1, water: false }));
-const flameZones = makePool(CONFIG.FLAME_ZONE_POOL, () => ({ active: false, x: 0, y: 0, w: 26, t: 0, dur: 1, tickT: 0, hostile: false }));
-const groundWaves = makePool(6, () => ({ active: false, x: 0, dir: 1, speed: 120, fromBoss: true }));
+const particles = makePool(CONFIG.PARTICLE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: '#fff', grav: 0, boom: -1, water: false, casing: false }));
+const flameZones = makePool(CONFIG.FLAME_ZONE_POOL, () => ({ active: false, x: 0, y: 0, w: 39, t: 0, dur: 1, tickT: 0, hostile: false }));
+const groundWaves = makePool(6, () => ({ active: false, x: 0, dir: 1, speed: 180, fromBoss: true }));
 // Kotak coretan dipakai ulang — dilarang alokasi objek per frame (KOREKSI.md).
 const _box = { x: 0, y: 0, w: 0, h: 0 };
 const _pbox = { x: 0, y: 0, w: 0, h: 0 };
@@ -281,7 +311,7 @@ function spawnParticles(x, y, count, colors, speed, life, size, grav) {
     if (!p) return;
     const a = Math.random() * Math.PI * 2;
     const sp = speed * (0.3 + Math.random() * 0.7);
-    p.active = true; p.boom = -1; p.water = false;
+    p.active = true; p.boom = -1; p.water = false; p.casing = false;
     p.x = x; p.y = y;
     p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp - speed * 0.25;
     p.maxLife = life * (0.6 + Math.random() * 0.7);
@@ -292,28 +322,60 @@ function spawnParticles(x, y, count, colors, speed, life, size, grav) {
   }
 }
 function spawnBoom(x, y, big) {
-  // Ledakan sprite berbingkai (bukan sekadar partikel kotak)
+  // Ledakan sprite berbingkai berlapis (bukan sekadar partikel kotak)
   const p = poolGet(particles);
   if (p) {
-    p.active = true; p.boom = 0; p.water = false;
+    p.active = true; p.boom = 0; p.water = false; p.casing = false;
     p.x = x; p.y = y; p.vx = 0; p.vy = 0;
-    p.maxLife = 0.34; p.life = 0.34; p.size = big ? 1.5 : 1; p.grav = 0; p.color = '#fff';
+    p.maxLife = 0.34; p.life = 0.34; p.size = big ? 1.6 : 1; p.grav = 0; p.color = '#fff';
   }
-  spawnParticles(x, y, big ? 16 : 8, ['#f2c230', '#d84f35', '#8f9296'], big ? 110 : 70, big ? 0.55 : 0.35, 2, 60);
-  spawnParticles(x, y, big ? 7 : 4, ['#5a5a5a', '#3a3a3a'], 26, 0.9, 3, -18);
+  spawnParticles(x, y, big ? 18 : 9, ['#f2c230', '#d84f35', '#8f9296'], big ? 165 : 105, big ? 0.55 : 0.35, 3, 90);
+  spawnParticles(x, y, big ? 8 : 4, ['#5a5a5a', '#3a3a3a'], 40, 1.0, 4, -27); // asap membumbung
 }
 function explosionFx(x, y, big) { spawnBoom(x, y, big); }
 function spawnSplashFx(x, y, count) {
   for (let i = 0; i < count; i++) {
     const p = poolGet(particles);
     if (!p) return;
-    p.active = true; p.boom = -1; p.water = true;
-    p.x = x + (Math.random() - 0.5) * 14; p.y = y;
-    p.vx = (Math.random() - 0.5) * 40;
-    p.vy = -60 - Math.random() * 70;
+    p.active = true; p.boom = -1; p.water = true; p.casing = false;
+    p.x = x + (Math.random() - 0.5) * 20; p.y = y;
+    p.vx = (Math.random() - 0.5) * 60;
+    p.vy = -90 - Math.random() * 105;
     p.maxLife = 0.5 + Math.random() * 0.3; p.life = p.maxLife;
-    p.size = 1 + Math.random() * 1.6; p.color = '#bfe6f2'; p.grav = 300;
+    p.size = 1.5 + Math.random() * 2; p.color = '#bfe6f2'; p.grav = 450;
   }
+}
+function spawnCasing(x, y, dir) {
+  // Selongsong peluru beterbangan & memantul di tanah (juice khas MS)
+  const p = poolGet(particles);
+  if (!p) return;
+  p.active = true; p.boom = -1; p.water = false; p.casing = true;
+  p.x = x; p.y = y;
+  p.vx = -dir * (40 + Math.random() * 45);
+  p.vy = -(120 + Math.random() * 70);
+  p.maxLife = 0.75; p.life = 0.75;
+  p.size = 2; p.color = '#f2c230'; p.grav = 800;
+}
+function spawnDust(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const p = poolGet(particles);
+    if (!p) return;
+    p.active = true; p.boom = -1; p.water = false; p.casing = false;
+    p.x = x + (Math.random() - 0.5) * 14; p.y = y - 1;
+    p.vx = (Math.random() - 0.5) * 36;
+    p.vy = -12 - Math.random() * 22;
+    p.maxLife = 0.32 + Math.random() * 0.2; p.life = p.maxLife;
+    p.size = 2 + Math.random() * 2; p.color = '#c9b18a'; p.grav = -14;
+  }
+}
+function spawnSmoke(x, y) {
+  const p = poolGet(particles);
+  if (!p) return;
+  p.active = true; p.boom = -1; p.water = false; p.casing = false;
+  p.x = x + (Math.random() - 0.5) * 10; p.y = y;
+  p.vx = (Math.random() - 0.5) * 8; p.vy = -26 - Math.random() * 14;
+  p.maxLife = 1.1; p.life = 1.1;
+  p.size = 3 + Math.random() * 3; p.color = '#2e2e2e'; p.grav = -20;
 }
 function spawnFlameZone(x, y, dur, hostile) {
   const z = poolGet(flameZones);
@@ -414,61 +476,107 @@ window.addEventListener('touchstart', () => document.body.classList.add('has-tou
 
 function input(name) { return keys[name] || touchKeys[name]; }
 
-/* ================= Skala canvas & orientasi ========================= */
+/* ================= Tata letak: panggung pas layar (contain) =========
+   Fungsi murni agar bisa diuji: diberi viewport (dan status rotasi CSS),
+   kembalikan ukuran panggung terbesar yang menampilkan SELURUH 480x270. */
+function computeStageSize(vw, vh, rotated) {
+  const aw = rotated ? vh : vw;
+  const ah = rotated ? vw : vh;
+  const s = Math.min(aw / CONFIG.VIEW_W, ah / CONFIG.VIEW_H);
+  return { w: Math.floor(CONFIG.VIEW_W * s), h: Math.floor(CONFIG.VIEW_H * s), scale: s };
+}
+let cssRotated = false;   // true bila fallback rotasi CSS sedang aktif
 function resize() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  let scale = Math.floor(Math.min(vw / CONFIG.VIEW_W, vh / CONFIG.VIEW_H));
-  if (scale < 1) scale = Math.min(vw / CONFIG.VIEW_W, vh / CONFIG.VIEW_H);
-  else {
-    // Bila skala integer menyisakan banyak ruang, pakai fit maksimal
-    // (memenuhi layar landscape) agar game sebesar mungkin.
-    const fit = Math.min(vw / CONFIG.VIEW_W, vh / CONFIG.VIEW_H);
-    if (fit >= scale + 0.45) scale = fit;
-  }
+  const size = computeStageSize(window.innerWidth, window.innerHeight, cssRotated);
   const stage = document.getElementById('stage');
-  stage.style.width = (CONFIG.VIEW_W * scale) + 'px';
-  stage.style.height = (CONFIG.VIEW_H * scale) + 'px';
+  stage.style.width = size.w + 'px';
+  stage.style.height = size.h + 'px';
 }
 window.addEventListener('resize', resize);
 resize();
 
-function isTouchDevice() {
-  return document.body.classList.contains('has-touch') ||
-    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+/* ================= Tombol layar MANUAL: PENUH & PUTAR ================
+   TIDAK ADA fullscreen / kunci orientasi / jeda otomatis di v3.
+   Fullscreen hanya berubah dari klik tombol PENUH; landscape hanya
+   dari klik tombol PUTAR. startGame() tidak menyentuh keduanya.      */
+let rotateMode = 'off';   // 'off' | 'native' | 'css'
+function syncFsBtn() {
+  document.getElementById('fsBtn').classList.toggle('on', !!document.fullscreenElement);
 }
-function checkOrientation() {
-  const portrait = window.innerHeight > window.innerWidth;
-  const need = portrait && isTouchDevice();
-  const ov = document.getElementById('rotateOverlay');
-  ov.classList.toggle('hidden', !need);
-  if (G.screen === 'play') {
-    if (need && !G.paused) { G.autoPaused = true; setPaused(true); }
-    else if (!need && G.autoPaused) { G.autoPaused = false; setPaused(false); }
-  }
+function syncRotBtn() {
+  document.getElementById('rotBtn').classList.toggle('on', rotateMode !== 'off');
 }
-window.addEventListener('resize', checkOrientation);
-window.addEventListener('orientationchange', checkOrientation);
-
-function goLandscapeFullscreen() {
-  // WAJIB dipanggil dari gestur pengguna (klik MULAI MISI).
+function toggleFullscreen() {
   try {
-    const el = document.documentElement;
-    const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (req) {
-      const pr = req.call(el);
-      if (pr && pr.then) pr.then(lockLandscape).catch(() => { /* abaikan */ });
-      else lockLandscape();
+    if (document.fullscreenElement) {
+      const p = document.exitFullscreen && document.exitFullscreen();
+      if (p && p.catch) p.catch(() => { /* abaikan */ });
+    } else {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) {
+        const p = req.call(el);
+        if (p && p.catch) p.catch(() => { /* ditolak: tetap main non-penuh */ });
+      }
     }
-  } catch (err) { /* fullscreen tidak tersedia: tetap main */ }
+  } catch (err) { /* fullscreen tidak tersedia */ }
 }
-function lockLandscape() {
+function applyCssRotate() {
+  rotateMode = 'css';
+  cssRotated = true;
+  document.body.classList.add('rot');
+  resize();
+  syncRotBtn();
+}
+function stopRotate() {
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (err) { /* abaikan */ }
+  if (rotateMode === 'css') {
+    cssRotated = false;
+    document.body.classList.remove('rot');
+  }
+  rotateMode = 'off';
+  resize();
+  syncRotBtn();
+}
+function toggleRotate() {
+  if (rotateMode !== 'off') { stopRotate(); return; }
+  // Dari gestur klik ini: masuk fullscreen dulu (bila belum), lalu coba
+  // kunci orientasi landscape; gagal/tidak didukung -> rotasi CSS.
+  let fsP = null;
   try {
-    if (screen.orientation && screen.orientation.lock) {
-      const p = screen.orientation.lock('landscape');
-      if (p && p.catch) p.catch(() => { /* kunci orientasi ditolak: tidak fatal */ });
+    if (!document.fullscreenElement) {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) fsP = req.call(el);
     }
   } catch (err) { /* abaikan */ }
+  const tryLock = () => {
+    let attempted = false;
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        attempted = true;
+        const p = screen.orientation.lock('landscape');
+        if (p && p.then) {
+          p.then(() => { rotateMode = 'native'; syncRotBtn(); }).catch(() => applyCssRotate());
+          return;
+        }
+        rotateMode = 'native'; syncRotBtn(); return;
+      }
+    } catch (err) { attempted = false; }
+    if (!attempted) applyCssRotate();
+  };
+  if (fsP && fsP.then) fsP.then(tryLock).catch(tryLock);
+  else tryLock();
 }
+document.addEventListener('fullscreenchange', () => {
+  syncFsBtn();
+  if (!document.fullscreenElement && rotateMode === 'native') {
+    // Keluar fullscreen mengakhiri kunci orientasi native.
+    rotateMode = 'off';
+    syncRotBtn();
+  }
+  resize();
+});
 
 /* ================= util ============================================= */
 function overlap(a, b) {
@@ -482,19 +590,23 @@ function addScore(n) { G.score += n; }
 function buildLevel() {
   enemies = ENEMY_DEFS.map((d) => ({
     type: d.type, x: d.x, y: (d.y !== undefined ? d.y - ENEMY_H[d.type] : CONFIG.GROUND_Y - ENEMY_H[d.type]),
-    w: d.type === 'shield' ? 20 : 15, h: ENEMY_H[d.type],
+    w: d.type === 'shield' ? 30 : 23, h: ENEMY_H[d.type],
     face: -1, state: 'idle', hp: 1, shieldHp: d.type === 'shield' ? 4 : 0,
     active: false, spawned: false, fireT: 1 + Math.random(), throwT: 1.5 + Math.random(), throwShowT: 0,
-    animT: Math.random() * 0.4, deadT: 0, hitT: 0, fleeT: 0, vx: 0, rocketT: 2 + Math.random() * 1.5
+    animT: Math.random() * 0.4, deadT: 0, hitT: 0, fleeT: 0, vx: 0, rocketT: 2 + Math.random() * 1.5,
+    laserMark: null
   }));
-  crates = CRATE_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 18, w: 18, h: 18, hp: 2, drop: d.drop, broken: false }));
+  crates = CRATE_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 27, w: 27, h: 27, hp: 2, drop: d.drop, broken: false }));
   pows = POW_DEFS.map((d) => ({
-    x: d.x, y: d.y !== undefined ? d.y - 20 : CONFIG.GROUND_Y - 20, w: 14, h: 20,
+    x: d.x, y: d.y !== undefined ? d.y - 30 : CONFIG.GROUND_Y - 30, w: 19, h: 30,
     state: d.hidden ? 'hidden' : 'tied', walkT: 0, vx: 0, animT: 0
   }));
   pickups = [];
-  tents = TENT_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 30, w: 44, h: 30, hp: 4, drop: d.drop, hidesPow: !!d.hidesPow, broken: false }));
-  fuels = FUEL_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 12, w: 12, h: 12, hp: 1, broken: false }));
+  tents = TENT_DEFS.map((d) => ({
+    x: d.x, y: CONFIG.GROUND_Y - (d.big ? 60 : 45), w: d.big ? 96 : 66, h: d.big ? 60 : 45,
+    hp: d.big ? 8 : 4, drop: d.drop, hidesPow: !!d.hidesPow, big: !!d.big, broken: false
+  }));
+  fuels = FUEL_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 18, w: 18, h: 18, hp: 1, broken: false }));
   // Reset SV-001
   slug.x = CONFIG.SLUG_X; slug.y = CONFIG.GROUND_Y - CONFIG.SLUG_H;
   slug.vx = 0; slug.vy = 0; slug.face = 1; slug.onGround = true; slug.occupied = false;
@@ -504,14 +616,14 @@ function buildLevel() {
   // Reset Monster Laut
   sea.state = 'dormant'; sea.hp = CONFIG.SEA_HP; sea.hitT = 0; sea.phaseT = 0;
   sea.curSpot = 0; sea.surfT = 0; sea.dieT = 0; sea.laserMark = null;
-  sea.head.x = SEA_SPOTS[0] - 22; sea.head.y = CONFIG.GROUND_Y + 4; sea.head.rise = 0;
+  sea.head.x = SEA_SPOTS[0] - 33; sea.head.y = CONFIG.GROUND_Y + 6; sea.head.rise = 0;
   for (const t of sea.tents) { t.rise = 0; t.state = 'down'; t.t = Math.random() * 1.5; }
   // Reset Di-Cokka
-  cokka.x = 2520; cokka.y = CONFIG.GROUND_Y - 44; cokka.hp = CONFIG.BOSS_HP;
+  cokka.x = 3700; cokka.y = CONFIG.GROUND_Y - 66; cokka.hp = CONFIG.BOSS_HP;
   cokka.active = false; cokka.dead = false; cokka.dying = 0; cokka.dir = -1;
   cokka.moveT = 0; cokka.fireT = 2.2; cokka.hitT = 0; cokka.recoilT = 0; cokka.laserMark = null;
   // Reset Titan
-  titan.x = 3060; titan.y = CONFIG.GROUND_Y - titan.h; titan.hp = CONFIG.TITAN_HP;
+  titan.x = 4400; titan.y = CONFIG.GROUND_Y - titan.h; titan.hp = CONFIG.TITAN_HP;
   titan.active = false; titan.dead = false; titan.dying = 0; titan.stateT = 0;
   titan.atkT = 2.0; titan.pattern = 0; titan.burstN = 0; titan.burstT = 0;
   titan.armAng = Math.PI; titan.stepT = 0; titan.vx = 0; titan.hitT = 0;
@@ -539,23 +651,22 @@ function startGame() {
   jumpPressed = false;      // cegah input tepi dari layar judul bocor ke permainan
   grenadePressed = false;
   G.screen = 'play';
-  G.paused = false; G.autoPaused = false;
+  G.paused = false;
   G.score = 0; G.lives = CONFIG.START_LIVES; G.powSaved = 0;
   G.timer = CONFIG.TIMER_START; G.timerAcc = 0; G.elapsed = 0;
   G.camX = 0; G.shake = 0; G.hitStop = 0; G.announceT = 0; G.announceText = ''; G.clearT = -1;
   resetPools();
   buildLevel();
   Object.assign(player, {
-    x: 60, y: CONFIG.GROUND_Y - CONFIG.PLAYER_H, w: CONFIG.PLAYER_W, h: CONFIG.PLAYER_H,
+    x: 40, y: CONFIG.GROUND_Y - CONFIG.PLAYER_H, w: CONFIG.PLAYER_W, h: CONFIG.PLAYER_H,
     vx: 0, vy: 0, face: 1, onGround: true, crouch: false, aim: 'h', state: 'normal',
-    deadT: 0, invulnT: 0, fireCd: 0, fireShowT: 0, throwT: 0, meleeT: 0, animT: 0,
+    deadT: 0, invulnT: 0, fireCd: 0, fireShowT: 0, throwT: 0, meleeT: 0, animT: 0, dustT: 0,
     weapon: 'handgun', ammo: 0, grenades: CONFIG.START_GRENADES, grenadeType: 'normal', firebombs: 0
   });
   announce('Mission Start!');
   showScreen(null);
   document.getElementById('pauseBtn').classList.remove('hidden');
-  if (SETTINGS.fullscreen) goLandscapeFullscreen();
-  checkOrientation();
+  // v3: TANPA fullscreen/rotasi otomatis di sini — itu urusan tombol manual.
 }
 
 function endScreen(win) {
@@ -589,7 +700,6 @@ function togglePause() { setPaused(!G.paused); }
 
 function openSettings(from) {
   G.settingsReturn = from;
-  document.getElementById('optFullscreen').checked = SETTINGS.fullscreen;
   document.getElementById('optMusic').checked = SETTINGS.music;
   document.getElementById('optSfx').checked = SETTINGS.sfx;
   document.getElementById('optVibrate').checked = SETTINGS.vibrate;
@@ -625,15 +735,15 @@ function applyPickup(kind) {
   else giveWeapon(kind);
 }
 function spawnPickup(x, y, kind) {
-  pickups.push({ x: x, y: y, w: 12, h: 10, vy: 0, kind: kind, t: 0 });
+  pickups.push({ x: x, y: y, w: 18, h: 15, vy: 0, kind: kind, t: 0 });
 }
 
 function freePow(pw) {
   if (pw.state !== 'tied') return;
   pw.state = 'free';
   pw.walkT = 1.6;
-  pw.y = pw.y + pw.h - 26;   // jaga posisi KAKI: tinggi berubah 20->26 (POW jembatan tetap di dek, tidak teleport ke tanah)
-  pw.h = 26;
+  pw.y = pw.y + pw.h - 39;   // jaga posisi KAKI: tinggi berubah 30->39 (POW platform tetap di dek)
+  pw.h = 39;
   AUDIO.sPowFree();
 }
 function rewardPow(pw) {
@@ -653,36 +763,30 @@ function computeMuzzle() {
   const p = player, m = _muzzle;
   const cx = p.x + p.w / 2;
   if (p.state === 'slug') {
-    m.x = slug.x + slug.w / 2 + Math.cos(slug.turretAng) * 22;
-    m.y = slug.y + 10 + Math.sin(slug.turretAng) * 22;
+    m.x = slug.x + slug.w / 2 + Math.cos(slug.turretAng) * 33;
+    m.y = slug.y + 15 + Math.sin(slug.turretAng) * 33;
     return m;
   }
-  if (p.crouch) { m.x = cx + p.face * 13; m.y = p.y + 17; return m; }
-  if (p.aim === 'up') { m.x = cx + p.face * 5; m.y = p.y - 2; return m; }
-  if (p.aim === 'diag') { m.x = cx + p.face * 13; m.y = p.y + 3; return m; }
-  if (p.aim === 'down') { m.x = cx + p.face * 6; m.y = p.y + p.h - 1; return m; }
-  m.x = cx + p.face * 13; m.y = p.y + 14; return m;
+  if (p.crouch) { m.x = cx + p.face * 20; m.y = p.y + 26; return m; }
+  if (p.aim === 'up') { m.x = cx + p.face * 8; m.y = p.y - 3; return m; }
+  if (p.aim === 'diag') { m.x = cx + p.face * 20; m.y = p.y + 5; return m; }
+  if (p.aim === 'down') { m.x = cx + p.face * 9; m.y = p.y + p.h - 1; return m; }
+  m.x = cx + p.face * 20; m.y = p.y + 21; return m;
 }
 
 function meleeTarget() {
   _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
-  _box.y = player.y + 2; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 4;
+  _box.y = player.y + 3; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 6;
   for (const e of enemies) if (e.spawned && e.state !== 'dead' && overlap(_box, e)) return e;
   return null;
 }
 function damageMeleeTarget() {
   const e = meleeTarget();
   if (e) { damageEnemy(e, 3, player.face); return true; }
-  for (const c of crates) if (!c.broken) {
-    _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
-    _box.y = player.y + 2; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 4;
-    if (overlap(_box, c)) { damageCrate(c, 1); return true; }
-  }
-  for (const t of tents) if (!t.broken) {
-    _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
-    _box.y = player.y + 2; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 4;
-    if (overlap(_box, t)) { damageDestructible(t, 1); return true; }
-  }
+  _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
+  _box.y = player.y + 3; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 6;
+  for (const c of crates) if (!c.broken && overlap(_box, c)) { damageCrate(c, 1); return true; }
+  for (const t of tents) if (!t.broken && overlap(_box, t)) { damageDestructible(t, 1); return true; }
   return false;
 }
 
@@ -693,7 +797,7 @@ function playerFire() {
     player.fireShowT = 0.12;
     player.meleeT = 0.18;
     AUDIO.sMelee();
-    spawnParticles(player.x + player.w / 2 + player.face * 12, player.y + 16, 4, ['#e8e4da', '#f2c230'], 70, 0.15, 1, 0);
+    spawnParticles(player.x + player.w / 2 + player.face * 18, player.y + 24, 5, ['#e8e4da', '#f2c230'], 105, 0.15, 2, 0);
     return;
   }
   player.fireCd = w.rate;
@@ -710,19 +814,20 @@ function playerFire() {
     else if (aim === 'diag') { b.vx = Math.cos(-Math.PI / 4 + ang) * w.speed * player.face; b.vy = Math.sin(-Math.PI / 4 + ang) * w.speed; }
     else if (aim === 'down') { b.vx = Math.sin(ang) * w.speed * player.face * 0.4; b.vy = Math.cos(ang) * w.speed; }
     else { b.vx = Math.cos(ang) * w.speed * player.face; b.vy = Math.sin(ang) * w.speed; }
-    if (player.weapon === 'flame') { b.vy -= 40; b.vx *= 0.9; }  // semburan parabolik
+    if (player.weapon === 'flame') { b.vy -= 60; b.vx *= 0.9; }  // semburan parabolik
   };
   if (player.weapon === 'shotgun') {
     for (let i = 0; i < WEAPONS.shotgun.pellets; i++) spawn((i - 2) * 0.14);
     AUDIO.sShotgun();
-    G.shake = Math.max(G.shake, 1.5);
+    G.shake = Math.max(G.shake, 2.2);
+    spawnCasing(m.x, m.y, player.face); spawnCasing(m.x, m.y, player.face);
   } else if (player.weapon === 'rocket') { spawn(0); AUDIO.sRocketLaunch(); }
-  else if (player.weapon === 'chaser') { spawn(0); AUDIO.sChaser(); }
+  else if (player.weapon === 'chaser') { spawn(0); AUDIO.sChaser(); spawnCasing(m.x, m.y, player.face); }
   else if (player.weapon === 'flame') { spawn((Math.random() - 0.5) * 0.16); AUDIO.sFlame(); }
   else if (player.weapon === 'laser') { spawn(0); AUDIO.sLaser(); }
-  else if (player.weapon === 'hmg') { spawn((Math.random() - 0.5) * 0.04); AUDIO.sHmg(); }
-  else { spawn(0); AUDIO.sShoot(); }
-  spawnParticles(m.x, m.y, 1, ['#f2c230'], 24, 0.06, 1, 0);
+  else if (player.weapon === 'hmg') { spawn((Math.random() - 0.5) * 0.04); AUDIO.sHmg(); spawnCasing(m.x, m.y, player.face); }
+  else { spawn(0); AUDIO.sShoot(); spawnCasing(m.x, m.y, player.face); }
+  spawnParticles(m.x, m.y, 1, ['#f2c230'], 36, 0.06, 2, 0);
   if (player.weapon !== 'handgun') {
     player.ammo--;
     if (player.ammo <= 0) { player.weapon = 'handgun'; player.ammo = 0; }
@@ -734,27 +839,27 @@ function playerThrowGrenade() {
   if (!useFire && player.grenades <= 0) { if (player.firebombs > 0) { player.grenadeType = 'fire'; useFire = true; } else return; }
   if (useFire && player.firebombs <= 0) return;
   const g = poolGet(grenades);
-  if (!g) return;
+  if (!g) return;   // pool dulu, baru stok dikurangi (KOREKSI audit v2)
   if (useFire) player.firebombs--; else player.grenades--;
   if (useFire && player.firebombs <= 0) player.grenadeType = 'normal';
   if (!useFire && player.grenades <= 0 && player.firebombs > 0) player.grenadeType = 'fire';
   player.throwT = 0.25;
   g.active = true; g.hostile = false; g.shell = false; g.firebomb = useFire; g.fuse = 2.5;
-  g.x = player.x + player.w / 2; g.y = player.y + 4;
-  g.vx = player.face * 95 + player.vx * 0.4;
-  g.vy = -165;
+  g.x = player.x + player.w / 2; g.y = player.y + 6;
+  g.vx = player.face * 143 + player.vx * 0.4;
+  g.vy = -248;
   AUDIO.sThrow();
 }
 
 /* ================= SV-001: masuk / keluar / tembak =================== */
 function enterSlug() {
   if (slug.destroyed || slug.occupied || player.state !== 'normal') return;
-  _box.x = player.x - 6; _box.y = player.y; _box.w = player.w + 12; _box.h = player.h;
+  _box.x = player.x - 9; _box.y = player.y; _box.w = player.w + 18; _box.h = player.h;
   if (!overlap(_box, slug)) return;
   slug.occupied = true;
   player.state = 'slug';
   player.x = slug.x + (slug.w - player.w) / 2;
-  player.y = slug.y - 12;
+  player.y = slug.y - 18;
   player.vx = 0; player.vy = 0;
   slug.face = player.face;
   announce('OK!');
@@ -765,10 +870,10 @@ function exitSlug() {
   slug.occupied = false;
   player.state = 'normal';
   player.h = CONFIG.PLAYER_H;
-  player.x = clamp(slug.x + slug.w / 2 - player.w / 2 + (slug.face > 0 ? -slug.w / 2 - 4 : slug.w / 2 + 4), 4, CONFIG.LEVEL_W - 20);
-  player.y = slug.y - 6;
-  player.vy = -140;               // terlontar kecil ke samping-atas
-  player.vx = slug.face > 0 ? -60 : 60;
+  player.x = clamp(slug.x + slug.w / 2 - player.w / 2 + (slug.face > 0 ? -slug.w / 2 - 6 : slug.w / 2 + 6), 4, CONFIG.LEVEL_W - 30);
+  player.y = slug.y - 9;
+  player.vy = -210;               // terlontar kecil ke samping-atas
+  player.vx = slug.face > 0 ? -90 : 90;
   player.onGround = false;
   player.invulnT = Math.max(player.invulnT, 0.5);
 }
@@ -778,14 +883,14 @@ function ejectFromSlug() {
   slug.destroyed = true;
   explosionFx(slug.x + slug.w / 2, slug.y + slug.h / 2, true);
   AUDIO.sExplosion(true);
-  G.shake = Math.max(G.shake, 4);
+  G.shake = Math.max(G.shake, 6);
   vibrate(120);
   player.state = 'normal';
   player.h = CONFIG.PLAYER_H;
-  player.x = clamp(slug.x + slug.w / 2 - player.w / 2, 4, CONFIG.LEVEL_W - 20);
-  player.y = slug.y - 10;
-  player.vy = -220;
-  player.vx = -slug.face * 70;
+  player.x = clamp(slug.x + slug.w / 2 - player.w / 2, 4, CONFIG.LEVEL_W - 30);
+  player.y = slug.y - 15;
+  player.vy = -330;
+  player.vx = -slug.face * 105;
   player.onGround = false;
   player.invulnT = 1.0;
 }
@@ -801,32 +906,33 @@ function slugFireVulcan() {
   const m = computeMuzzle();
   const b = poolGet(bullets);
   if (!b) return;
-  b.active = true; b.kind = 'vulcan'; b.dmg = 1; b.face = slug.face; b.laser = false; b.burn = 0;
+  b.active = true; b.id = ++bulletSerial; b.kind = 'vulcan'; b.dmg = 1; b.face = slug.face; b.laser = false; b.burn = 0;
   b.x = m.x - 1; b.y = m.y - 1; b.life = 1.1;
   const spread = (Math.random() - 0.5) * 0.05;
-  b.vx = Math.cos(slug.turretAng + spread) * 340;
-  b.vy = Math.sin(slug.turretAng + spread) * 340;
+  b.vx = Math.cos(slug.turretAng + spread) * 510;
+  b.vy = Math.sin(slug.turretAng + spread) * 510;
   AUDIO.sVulcan();
-  spawnParticles(m.x, m.y, 1, ['#f2c230'], 22, 0.05, 1, 0);
+  spawnParticles(m.x, m.y, 1, ['#f2c230'], 33, 0.05, 2, 0);
+  spawnCasing(slug.x + slug.w / 2, slug.y + 8, slug.face);
 }
 function slugFireCannon() {
   if (slug.cannon <= 0) { AUDIO.sHit(); return; }
   const g = poolGet(grenades);
-  if (!g) return;   // pool penuh: amunisi TIDAK hangus
+  if (!g) return;   // pool penuh: amunisi TIDAK hangus (KOREKSI audit v2)
   slug.cannon--;
   slug.cannonCd = CONFIG.CANNON_RATE;
   const m = computeMuzzle();
   g.active = true; g.hostile = false; g.shell = true; g.firebomb = false; g.fuse = 3;
   g.x = m.x; g.y = m.y;
-  g.vx = Math.cos(slug.turretAng) * 260;
-  g.vy = Math.sin(slug.turretAng) * 260 - 30;
+  g.vx = Math.cos(slug.turretAng) * 390;
+  g.vy = Math.sin(slug.turretAng) * 390 - 45;
   AUDIO.sCannon();
-  G.shake = Math.max(G.shake, 2);
+  G.shake = Math.max(G.shake, 3);
 }
 
 /* ================= Kerusakan & kematian =============================== */
 function targetSeaParts(box) {
-  // Kembalikan 'sea' bila kotak mengenai kepala/tentakel monster laut yang muncul.
+  // Kembalikan true bila kotak mengenai kepala/tentakel monster laut yang muncul.
   if (sea.state !== 'fighting' && sea.state !== 'dying') return false;
   if (sea.head.rise > 0.4) {
     _ent.x = sea.head.x; _ent.y = sea.head.y; _ent.w = sea.head.w; _ent.h = sea.head.h;
@@ -847,7 +953,7 @@ function damageEnemy(e, dmg, fromDir) {
     if (hitsShield) {
       e.shieldHp--;
       AUDIO.sShieldClank();
-      spawnParticles(e.x + (e.face < 0 ? 0 : e.w), e.y + 10, 3, ['#f2c230', '#e8e4da'], 60, 0.15, 1, 120);
+      spawnParticles(e.x + (e.face < 0 ? 0 : e.w), e.y + 15, 4, ['#f2c230', '#e8e4da'], 90, 0.15, 2, 180);
       if (e.shieldHp <= 0) { e.state = 'flee'; e.fleeT = 0; }
       return;
     }
@@ -861,7 +967,7 @@ function killEnemy(e) {
   e.state = 'dead';
   e.deadT = 0.38;
   addScore(e.type === 'rebel' ? 100 : 300);
-  spawnParticles(e.x + e.w / 2, e.y + 10, 6, ['#d84f35', '#f2c230'], 60, 0.3, 2, 100);
+  spawnParticles(e.x + e.w / 2, e.y + 15, 8, ['#d84f35', '#f2c230'], 90, 0.3, 3, 150);
 }
 function damageCrate(c, dmg) {
   if (c.broken) return;
@@ -869,22 +975,22 @@ function damageCrate(c, dmg) {
   AUDIO.sHit();
   if (c.hp <= 0) {
     c.broken = true;
-    spawnParticles(c.x + 9, c.y + 9, 8, ['#a9713f', '#6e3d20', '#f2c230'], 70, 0.35, 2, 160);
+    spawnParticles(c.x + 13, c.y + 13, 10, ['#a9713f', '#6e3d20', '#f2c230'], 105, 0.35, 3, 240);
     AUDIO.sExplosion(false);
-    spawnPickup(c.x + 3, c.y, c.drop);
+    spawnPickup(c.x + 4, c.y, c.drop);
   }
 }
-function damageDestructible(t, dmg) {   // tenda
+function damageDestructible(t, dmg) {   // tenda / gudang
   if (t.broken) return;
   t.hp -= dmg;
   AUDIO.sHit();
   if (t.hp <= 0) {
     t.broken = true;
-    spawnParticles(t.x + t.w / 2, t.y + 12, 14, ['#5c6b45', '#47543a', '#f2c230'], 80, 0.4, 2, 140);
+    spawnParticles(t.x + t.w / 2, t.y + 16, 16, ['#5c6b45', '#47543a', '#f2c230'], 120, 0.4, 3, 210);
     AUDIO.sExplosion(false);
-    if (t.drop) spawnPickup(t.x + 16, t.y + 8, t.drop);
+    if (t.drop) spawnPickup(t.x + (t.big ? 39 : 24), t.y + 12, t.drop);
     if (t.hidesPow) {
-      for (const pw of pows) if (pw.state === 'hidden') { pw.state = 'tied'; pw.x = t.x + 15; pw.y = CONFIG.GROUND_Y - 20; }
+      for (const pw of pows) if (pw.state === 'hidden') { pw.state = 'tied'; pw.x = t.x + 22; pw.y = CONFIG.GROUND_Y - 30; }
       announce('POW ditemukan!');
     }
   }
@@ -918,18 +1024,16 @@ function damageSea(dmg) {
     sea.dieT = 2.2;
     addScore(CONFIG.SEA_SCORE);
     AUDIO.sRoar();
-    spawnSplashFx(sea.head.x + 22, CONFIG.GROUND_Y, 22);
+    spawnSplashFx(sea.head.x + 33, CONFIG.GROUND_Y, 26);
     if (G.arenaLock && G.arenaLock.boss === 'sea') G.arenaLock = null;
   }
 }
 function damageTitan(box, dmg) {
   if (!titan.active || titan.dead || titan.dying > 0) return;
-  // Core dada: kotak relatif sprite Titan (26..38, 38..50) dari sudut sprite.
-  _ent.x = titan.x + 16; _ent.y = titan.y + 38; _ent.w = 12; _ent.h = 12;
+  // Core dada dinilai dari PITA VERTIKAL (KOREKSI audit v2): proyektil
+  // setinggi dada yang mengenai badan dihitung mengenai core.
+  _ent.x = titan.x + 30; _ent.y = titan.y + 57; _ent.w = 18; _ent.h = 18;
   let mult = 1;
-  // Core dinilai dari PITA VERTIKAL: proyektil setinggi dada yang mengenai badan
-  // dihitung mengenai core. Uji tumpang-tindih penuh tidak akan pernah terpicu
-  // tembakan lurus, karena proyektil selalu berhenti di tepi depan badan.
   if (box && box.y < _ent.y + _ent.h && box.y + box.h > _ent.y &&
       box.x < titan.x + titan.w && box.x + box.w > titan.x) { mult = CONFIG.TITAN_CORE_MULT; titan.flashCoreT = 0.1; }
   titan.hp -= dmg * mult;
@@ -950,24 +1054,23 @@ function hitPlayerByBullet() {
   if (player.state === 'normal' && player.invulnT <= 0) killPlayer();
 }
 function explodeAt(x, y, hostile, big) {
-  const radius = big ? 30 : 26;
+  const radius = big ? 45 : 39;
   explosionFx(x, y, big);
   AUDIO.sExplosion(big);
-  G.shake = Math.max(G.shake, big ? 3 : 2);
+  G.shake = Math.max(G.shake, big ? 4.5 : 3);
   if (big) vibrate(60);
-  // Reaksi berantai tong bahan bakar (jeda kecil tidak dipakai: langsung,
-  // tetapi radius tong adil terbatas & hanya dari ledakan pemain/boss).
+  // Reaksi berantai tong bahan bakar
   for (const f of fuels) {
     if (f.broken) continue;
-    const dx = f.x + 6 - x, dy = f.y + 6 - y;
-    if (dx * dx + dy * dy <= (radius + 12) * (radius + 12)) damageFuel(f, 1);
+    const dx = f.x + 9 - x, dy = f.y + 9 - y;
+    if (dx * dx + dy * dy <= (radius + 18) * (radius + 18)) damageFuel(f, 1);
   }
   // Tong bisa menghancurkan tenda & peti di dekatnya
   if (!hostile) {
     for (const t of tents) {
       if (t.broken) continue;
       const dx = t.x + t.w / 2 - x, dy = t.y + t.h / 2 - y;
-      if (dx * dx + dy * dy <= (radius + 16) * (radius + 16)) damageDestructible(t, 2);
+      if (dx * dx + dy * dy <= (radius + 24) * (radius + 24)) damageDestructible(t, 2);
     }
   }
   if (hostile) {
@@ -982,12 +1085,12 @@ function explodeAt(x, y, hostile, big) {
     for (const e of enemies) {
       if (!e.spawned || e.state === 'dead') continue;
       const dx = e.x + e.w / 2 - x, dy = e.y + e.h / 2 - y;
-      if (dx * dx + dy * dy <= (radius + 8) * (radius + 8)) damageEnemy(e, 3, dx >= 0 ? 1 : -1);
+      if (dx * dx + dy * dy <= (radius + 12) * (radius + 12)) damageEnemy(e, 3, dx >= 0 ? 1 : -1);
     }
     for (const c of crates) {
       if (c.broken) continue;
-      const dx = c.x + 9 - x, dy = c.y + 9 - y;
-      if (dx * dx + dy * dy <= (radius + 8) * (radius + 8)) damageCrate(c, 2);
+      const dx = c.x + 13 - x, dy = c.y + 13 - y;
+      if (dx * dx + dy * dy <= (radius + 12) * (radius + 12)) damageCrate(c, 2);
     }
     if (sea.state === 'fighting') {
       _box.x = x - radius; _box.y = y - radius; _box.w = radius * 2; _box.h = radius * 2;
@@ -995,7 +1098,7 @@ function explodeAt(x, y, hostile, big) {
     }
     if (cokka.active && !cokka.dead) {
       const dx = cokka.x + cokka.w / 2 - x, dy = cokka.y + cokka.h / 2 - y;
-      if (dx * dx + dy * dy <= (radius + 22) * (radius + 22)) damageCokka(3);
+      if (dx * dx + dy * dy <= (radius + 33) * (radius + 33)) damageCokka(3);
     }
     if (titan.active && !titan.dead) {
       _box.x = x - radius; _box.y = y - radius; _box.w = radius * 2; _box.h = radius * 2;
@@ -1009,17 +1112,17 @@ function killPlayer() {
   if (player.state !== 'normal' || player.invulnT > 0) return;
   player.state = 'dead';
   player.deadT = 1.15;
-  player.vy = -160;
+  player.vy = -240;
   AUDIO.sPlayerHit();
   vibrate(80);
-  spawnParticles(player.x + player.w / 2, player.y + 14, 10, ['#d84f35', '#f2c230'], 80, 0.4, 2, 120);
+  spawnParticles(player.x + player.w / 2, player.y + 21, 12, ['#d84f35', '#f2c230'], 120, 0.4, 3, 180);
 }
 function respawnPlayer() {
   G.lives--;
   if (G.lives <= 0) { endScreen(false); return; }
   player.state = 'normal';
   player.h = CONFIG.PLAYER_H;
-  let rx = clamp(player.x, 4, CONFIG.LEVEL_W - 20);
+  let rx = clamp(player.x, 4, CONFIG.LEVEL_W - 30);
   if (G.arenaLock) rx = clamp(rx, G.arenaLock.minX + 4, G.arenaLock.maxX - player.w - 4);
   player.x = rx;
   player.y = CONFIG.GROUND_Y - player.h;
@@ -1037,20 +1140,20 @@ function physicsBody(b, dt, speed, jumpVel, allowPlatforms) {
   const prevBottom = b.y + b.h;
   const g = b.vy < 0 ? CONFIG.GRAVITY_UP : CONFIG.GRAVITY;
   b.vy += g * dt;
-  if (b.vy > 430) b.vy = 430;
+  if (b.vy > 645) b.vy = 645;
   b.y += b.vy * dt;
   b.onGround = false;
   if (b.vy >= 0) {
     if (allowPlatforms) {
       for (const pl of PLATFORMS) {
-        if (b.x + b.w > pl.x + 2 && b.x < pl.x + pl.w - 2) {
+        if (b.x + b.w > pl.x + 3 && b.x < pl.x + pl.w - 3) {
           if (prevBottom <= pl.y + 1 && b.y + b.h >= pl.y) { b.y = pl.y - b.h; b.vy = 0; b.onGround = true; }
         }
       }
     }
     if (b.y + b.h >= CONFIG.GROUND_Y) { b.y = CONFIG.GROUND_Y - b.h; b.vy = 0; b.onGround = true; }
   }
-  if (b.y < -60) b.y = -60;
+  if (b.y < -90) b.y = -90;
 }
 
 function updatePlayer(dt) {
@@ -1059,7 +1162,7 @@ function updatePlayer(dt) {
     p.deadT -= dt;
     p.vy += CONFIG.GRAVITY * dt;
     p.y += p.vy * dt;
-    if (p.y > CONFIG.GROUND_Y - 10) p.y = CONFIG.GROUND_Y - 10;
+    if (p.y > CONFIG.GROUND_Y - 15) p.y = CONFIG.GROUND_Y - 15;
     if (p.deadT <= 0) respawnPlayer();
     return;
   }
@@ -1103,9 +1206,16 @@ function updatePlayer(dt) {
     p.onGround = false;
     AUDIO.sJump();
   }
+  const wasGround = p.onGround, fallV = p.vy;
   physicsBody(p, dt, CONFIG.PLAYER_SPEED, CONFIG.PLAYER_JUMP_VEL, true);
+  // Debu mendarat & debu kaki saat berlari (juice)
+  if (!wasGround && p.onGround && fallV > 240) spawnDust(p.x + p.w / 2, CONFIG.GROUND_Y <= p.y + p.h + 1 ? p.y + p.h : p.y + p.h, 6);
+  if (p.onGround && p.vx !== 0) {
+    p.dustT -= dt;
+    if (p.dustT <= 0) { p.dustT = 0.13; spawnDust(p.x + p.w / 2 - p.face * 7, p.y + p.h, 1); }
+  }
 
-  p.x = clamp(p.x, 4, CONFIG.LEVEL_W - 20);
+  p.x = clamp(p.x, 4, CONFIG.LEVEL_W - 30);
   if (G.arenaLock) p.x = clamp(p.x, G.arenaLock.minX + 2, G.arenaLock.maxX - p.w - 2);
   if (cokka.active && !cokka.dead) p.x = Math.min(p.x, cokka.x - p.w - 2);
   if (titan.active && !titan.dead) p.x = Math.min(p.x, titan.x - p.w - 2);
@@ -1135,8 +1245,7 @@ function updateSlug(dt) {
   // Keluar: BAWAH + B (lompat ditekan saat menahan bawah)
   if (D && jumpPressed) { exitSlug(); return; }
 
-  // Sudut turet 8-arah dari input arah (relatif arah hadap tidak perlu:
-  // sudut absolut dunia, dibatasi setengah lingkaran atas/depan).
+  // Sudut turet 8-arah dari input arah (sudut absolut dunia).
   let ang = slug.face > 0 ? 0 : Math.PI;
   if (U && L) ang = -Math.PI * 0.75;
   else if (U && R) ang = -Math.PI * 0.25;
@@ -1158,7 +1267,9 @@ function updateSlug(dt) {
     slug.onGround = false;
     AUDIO.sJump();
   }
+  const slugWasGround = slug.onGround, slugFallV = slug.vy;
   physicsBody(slug, dt, CONFIG.SLUG_SPEED, CONFIG.SLUG_JUMP_VEL, true);
+  if (!slugWasGround && slug.onGround && slugFallV > 200) spawnDust(slug.x + slug.w / 2, slug.y + slug.h, 7);
   slug.x = clamp(slug.x, 4, CONFIG.LEVEL_W - slug.w - 4);
   if (G.arenaLock) slug.x = clamp(slug.x, G.arenaLock.minX + 2, G.arenaLock.maxX - slug.w - 2);
   if (cokka.active && !cokka.dead) slug.x = Math.min(slug.x, cokka.x - slug.w - 2);
@@ -1169,17 +1280,19 @@ function updateSlug(dt) {
     slug.trackT -= dt;
     if (slug.trackT <= 0) { slug.trackT = 0.16; AUDIO.sTracks(); }
   }
+  // Asap hitam saat armor tinggal 1 (kendaraan rusak)
+  if (slug.armor === 1 && Math.random() < dt * 5) spawnSmoke(slug.x + slug.w / 2, slug.y + 4);
 
   // Pemain menempel di atas Slug
   p.x = slug.x + (slug.w - p.w) / 2;
-  p.y = slug.y - 12;
+  p.y = slug.y - 18;
   p.vx = slug.vx; p.vy = slug.vy;
 
   if (input('fire') && slug.fireCd <= 0) slugFireVulcan();
   if (grenadePressed) slugFireCannon();
 
   // Pickup tetap bisa diambil saat naik Slug (kotak pemain mengikuti Slug)
-  _pbox.x = slug.x; _pbox.y = slug.y - 12; _pbox.w = slug.w; _pbox.h = slug.h + 12;
+  _pbox.x = slug.x; _pbox.y = slug.y - 18; _pbox.w = slug.w; _pbox.h = slug.h + 18;
   for (let i = pickups.length - 1; i >= 0; i--) {
     if (overlap(_pbox, pickups[i])) { applyPickup(pickups[i].kind); pickups.splice(i, 1); }
   }
@@ -1190,9 +1303,9 @@ function enemyShoot(e, ecx) {
   const b = poolGet(ebullets);
   if (!b) return;
   b.active = true; b.water = false; b.gravity = 0;
-  b.x = ecx + e.face * (e.w / 2 + 2);
-  b.y = e.y + 9;
-  b.vx = e.face * 130;
+  b.x = ecx + e.face * (e.w / 2 + 3);
+  b.y = e.y + 13;
+  b.vx = e.face * 195;
   b.vy = 0;
   AUDIO.sShoot();
 }
@@ -1200,7 +1313,7 @@ function updateEnemies(dt) {
   const pcx = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
   for (const e of enemies) {
     if (!e.spawned) {
-      if (e.x < G.camX + CONFIG.VIEW_W + 30 && e.x > G.camX - 60) e.spawned = true;
+      if (e.x < G.camX + CONFIG.VIEW_W + 45 && e.x > G.camX - 90) e.spawned = true;
       else continue;
     }
     if (e.hitT > 0) e.hitT -= dt;
@@ -1212,28 +1325,28 @@ function updateEnemies(dt) {
     if (e.state === 'dead') { e.deadT -= dt; continue; }
     if (e.state === 'flee') {
       e.fleeT += dt;
-      e.x += -e.face * 70 * dt;
+      e.x += -e.face * 105 * dt;
       if (e.fleeT > 2.2) e.spawned = false;
       continue;
     }
     if (player.state === 'dead') continue;
 
     if (e.state === 'idle') {
-      if (dist < 150) e.state = 'alert';
+      if (dist < 225) e.state = 'alert';
       else continue;
     }
     e.face = dirToPlayer;
 
     if (e.type === 'grenade') {
       e.throwT -= dt;
-      if (dist < 230 && e.throwT <= 0) {
+      if (dist < 345 && e.throwT <= 0) {
         e.throwT = 2.3;
         e.throwShowT = 0.35;
         const g = poolGet(grenades);
         if (g) {
           const tFly = 0.95;
           g.active = true; g.hostile = true; g.shell = false; g.firebomb = false; g.fuse = 3;
-          g.x = ecx; g.y = e.y + 2;
+          g.x = ecx; g.y = e.y + 3;
           g.vx = (pcx - ecx) / tFly;
           g.vy = -0.5 * CONFIG.GRAVITY * tFly;
           AUDIO.sThrow();
@@ -1245,22 +1358,22 @@ function updateEnemies(dt) {
     if (e.type === 'bazooka') {
       // Diam di platform: menembakkan roket lambat berkedip (bisa ditembak jatuh)
       e.rocketT -= dt;
-      if (dist < 250 && e.rocketT <= 0) {
+      if (dist < 375 && e.rocketT <= 0) {
         e.rocketT = 3.0;
         const r = poolGet(erockets);
         if (r) {
           r.active = true; r.titan = false; r.blinkT = 0;
-          r.x = ecx + e.face * 10; r.y = e.y + 5;
-          r.vx = e.face * 62; r.vy = 0;
+          r.x = ecx + e.face * 15; r.y = e.y + 7;
+          r.vx = e.face * 93; r.vy = 0;
           AUDIO.sRocketLaunch();
         }
       }
       continue;
     }
     // Rebel & Shield
-    const stopDist = e.type === 'shield' ? 62 : 52;
+    const stopDist = e.type === 'shield' ? 93 : 78;
     if (dist > stopDist) {
-      e.x += dirToPlayer * (e.type === 'shield' ? 26 : 34) * dt;
+      e.x += dirToPlayer * (e.type === 'shield' ? 39 : 51) * dt;
     } else {
       e.fireT -= dt;
       if (e.fireT <= 0) {
@@ -1278,7 +1391,7 @@ function updateEnemies(dt) {
 function seaSpawnWaterBall(tx) {
   const b = poolGet(ebullets);
   if (!b) return;
-  const sx = sea.head.x + 22, sy = sea.head.y + 20;
+  const sx = sea.head.x + 33, sy = sea.head.y + 30;
   const tFly = 0.9;
   b.active = true; b.water = true; b.gravity = CONFIG.GRAVITY * 0.55;
   b.x = sx; b.y = sy;
@@ -1291,10 +1404,10 @@ function updateSea(dt) {
     if (player.x > CONFIG.SEA_TRIGGER_X && player.state !== 'dead') {
       sea.state = 'fighting';
       sea.phaseT = 0.5;
-      G.arenaLock = { minX: 30, maxX: 500, boss: 'sea' };
+      G.arenaLock = { minX: 40, maxX: 760, boss: 'sea' };
       announce('Monster Laut!');
       AUDIO.sRoar();
-      spawnSplashFx(sea.head.x + 22, CONFIG.GROUND_Y, 16);
+      spawnSplashFx(sea.head.x + 33, CONFIG.GROUND_Y, 18);
     }
     return;
   }
@@ -1303,21 +1416,20 @@ function updateSea(dt) {
   if (sea.state === 'dying') {
     sea.dieT -= dt;
     sea.head.rise = Math.max(0, sea.head.rise - dt * 0.4);
-    sea.head.y = CONFIG.GROUND_Y + 4 - 42 * sea.head.rise;
+    sea.head.y = CONFIG.GROUND_Y + 6 - 63 * sea.head.rise;
     for (const t of sea.tents) t.rise = Math.max(0, t.rise - dt * 0.5);
-    if (Math.random() < 0.3) spawnSplashFx(sea.head.x + 22, CONFIG.GROUND_Y, 3);
+    if (Math.random() < 0.3) spawnSplashFx(sea.head.x + 33, CONFIG.GROUND_Y, 4);
     if (sea.dieT <= 0) { sea.state = 'dead'; announce('Sungai aman!'); }
     return;
   }
-  // fighting. Kotak kepala mengikuti gambar: permukaan air di GROUND_Y,
-  // sprite 40px muncul dari bawah — y kotak = GROUND_Y + 4 - 42*rise.
+  // fighting. Kotak kepala memakai rumus gambar yang sama.
   sea.phaseT -= dt;
   if (sea.phaseT <= 0) {
     sea.phaseT = 3.0;
     sea.curSpot = (sea.curSpot + 1 + ((Math.random() * 2) | 0)) % SEA_SPOTS.length;
-    sea.head.x = SEA_SPOTS[sea.curSpot] - 22;
+    sea.head.x = SEA_SPOTS[sea.curSpot] - 33;
     sea.surfT = 0;
-    spawnSplashFx(sea.head.x + 22, CONFIG.GROUND_Y, 8);
+    spawnSplashFx(sea.head.x + 33, CONFIG.GROUND_Y, 9);
     AUDIO.sSplash();
   }
   if (sea.phaseT < 1.2 && sea.phaseT > 0.6 && sea.surfT <= 0 && player.state !== 'dead') {
@@ -1327,25 +1439,25 @@ function updateSea(dt) {
   }
   const target = sea.phaseT > 0.6 ? 1 : 0;
   sea.head.rise += clamp(target - sea.head.rise, -dt * 1.8, dt * 1.8);
-  sea.head.y = CONFIG.GROUND_Y + 4 - 42 * sea.head.rise;
+  sea.head.y = CONFIG.GROUND_Y + 6 - 63 * sea.head.rise;
   // Tentakel: siklus down -> warn (bayangan 0.5 dtk) -> rise -> slam -> hold -> down
   const pcx = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
   for (const t of sea.tents) {
     t.t -= dt;
     if (t.state === 'down') {
       t.rise = Math.max(0, t.rise - dt * 2);
-      if (t.t <= 0) { t.state = 'warn'; t.t = 0.5; t.warnX = clamp(pcx - 7, RIVER.x0 + 6, RIVER.x1 - 20); AUDIO.sSplash(); }
+      if (t.t <= 0) { t.state = 'warn'; t.t = 0.5; t.warnX = clamp(pcx - 10, RIVER.x0 + 9, RIVER.x1 - 30); AUDIO.sSplash(); }
     } else if (t.state === 'warn') {
       if (t.t <= 0) { t.state = 'rise'; t.t = 0.28; t.x = t.warnX; }
     } else if (t.state === 'rise') {
       t.rise = Math.min(1, t.rise + dt / 0.28);
       if (t.t <= 0) {
         t.state = 'slam'; t.t = 0.5;
-        spawnSplashFx(t.x + 7, CONFIG.GROUND_Y, 10);
+        spawnSplashFx(t.x + 10, CONFIG.GROUND_Y, 12);
         AUDIO.sSplash();
-        G.shake = Math.max(G.shake, 1.5);
+        G.shake = Math.max(G.shake, 2.2);
         // Hantaman mengenai pemain yang berdiri di tanah dalam jangkauan
-        _ent.x = t.x - 2; _ent.y = CONFIG.GROUND_Y - 10; _ent.w = t.w + 4; _ent.h = 12;
+        _ent.x = t.x - 3; _ent.y = CONFIG.GROUND_Y - 15; _ent.w = t.w + 6; _ent.h = 18;
         if (player.state === 'normal' && player.onGround && player.invulnT <= 0 && overlap(_ent, player)) killPlayer();
         else if (player.state === 'slug' && slug.onGround && overlap(_ent, slug)) damageSlug(1);
       }
@@ -1360,7 +1472,7 @@ function updateCokka(dt) {
   if (!cokka.active) {
     if (player.x > CONFIG.COKKA_TRIGGER_X && player.state !== 'dead') {
       cokka.active = true;
-      G.arenaLock = { minX: 2280, maxX: 2760, boss: 'cokka' };
+      G.arenaLock = { minX: 3350, maxX: 3850, boss: 'cokka' };
       announce('Di-Cokka!');
       AUDIO.sPickup();
     }
@@ -1374,22 +1486,24 @@ function updateCokka(dt) {
     if (Math.random() < 0.35) {
       explosionFx(cokka.x + Math.random() * cokka.w, cokka.y + Math.random() * cokka.h, false);
       AUDIO.sExplosion(false);
-      G.shake = Math.max(G.shake, 2.5);
+      G.shake = Math.max(G.shake, 3.5);
     }
     if (cokka.dying <= 0) {
       cokka.dead = true;
       explosionFx(cokka.x + cokka.w / 2, cokka.y + cokka.h / 2, true);
       AUDIO.sExplosion(true);
-      G.shake = 5;
+      G.shake = 7;
       announce('Mini-boss hancur!');
       if (G.arenaLock && G.arenaLock.boss === 'cokka') G.arenaLock = null;
     }
     return;
   }
+  // Asap hitam saat rusak berat
+  if (cokka.hp <= CONFIG.BOSS_HP * 0.5 && Math.random() < dt * 6) spawnSmoke(cokka.x + cokka.w / 2, cokka.y + 6);
   cokka.moveT -= dt;
   if (cokka.moveT <= 0) { cokka.moveT = 1.6 + Math.random(); cokka.dir = cokka.dir * -1; }
-  cokka.x += cokka.dir * 11 * dt;
-  cokka.x = clamp(cokka.x, 2400, 2690);
+  cokka.x += cokka.dir * 17 * dt;
+  cokka.x = clamp(cokka.x, 3560, 3748);
   if (player.state !== 'dead') {
     cokka.fireT -= dt;
     if (cokka.fireT <= 0) {
@@ -1397,7 +1511,7 @@ function updateCokka(dt) {
       cokka.recoilT = 0.18;
       const g = poolGet(grenades);
       if (g) {
-        const sx = cokka.x + 2, sy = cokka.y + 16;
+        const sx = cokka.x + 3, sy = cokka.y + 24;
         const pcx = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
         const tFly = 1.1;
         g.active = true; g.hostile = true; g.shell = true; g.firebomb = false; g.fuse = 3;
@@ -1414,12 +1528,12 @@ function updateCokka(dt) {
 function titanBurstShot() {
   const b = poolGet(ebullets);
   if (!b) return;
-  const mx = titan.x + 2, my = titan.y + 34;
+  const mx = titan.x + 3, my = titan.y + 51;
   const pcx = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
-  const pcy = player.state === 'slug' ? slug.y + 20 : player.y + 16;
+  const pcy = player.state === 'slug' ? slug.y + 30 : player.y + 24;
   const dx = pcx - mx, dy = pcy - my;
   const d = Math.sqrt(dx * dx + dy * dy) || 1;
-  const sp = 165;
+  const sp = 248;
   b.active = true; b.water = false; b.gravity = 0;
   b.x = mx; b.y = my; b.vx = dx / d * sp; b.vy = dy / d * sp;
   AUDIO.sShoot();
@@ -1428,10 +1542,15 @@ function titanMissile(tx) {
   const r = poolGet(erockets);
   if (!r) return;
   r.active = true; r.titan = true; r.blinkT = 0;
-  r.x = titan.x + 8 + Math.random() * 40; r.y = titan.y + 8;
-  const tFly = 1.25;
-  r.vx = (tx - r.x) / tFly * 0.5;
-  r.vy = -150;
+  r.x = titan.x + 12 + Math.random() * 54; r.y = titan.y + 12;
+  // Waktu terbang NYATA rudal: vy0 -225, gravitasi 0.8*GRAVITY (=1080),
+  // jatuh dari titan.y+12 ke GROUND_Y-3 (=135px) -> t = 0.75s. vx WAJIB
+  // menempuh (tx - r.x) dalam 0.75s itu; rumus lama (/1.25 *0.5) membuat
+  // rudal selalu mendarat ~30% jalan — salvo tak pernah mencapai pemain
+  // (audit v3: min |dx| 79px dari pemain diam, radius ledakan hanya 45).
+  const tFly = 0.75;
+  r.vx = (tx - r.x) / tFly;
+  r.vy = -225;
   AUDIO.sRocketLaunch();
 }
 function updateTitan(dt) {
@@ -1439,7 +1558,7 @@ function updateTitan(dt) {
     if (player.x > CONFIG.TITAN_TRIGGER_X && player.state !== 'dead') {
       titan.active = true;
       titan.introT = 1.2;
-      G.arenaLock = { minX: 2820, maxX: 3280, boss: 'titan' };
+      G.arenaLock = { minX: 4080, maxX: 4580, boss: 'titan' };
       announce('ROBOT TITAN!');
       AUDIO.sRoar();
       vibrate(100);
@@ -1455,14 +1574,14 @@ function updateTitan(dt) {
     if (Math.random() < 0.4) {
       explosionFx(titan.x + Math.random() * titan.w, titan.y + Math.random() * titan.h, Math.random() < 0.4);
       AUDIO.sExplosion(false);
-      G.shake = Math.max(G.shake, 3);
+      G.shake = Math.max(G.shake, 4);
     }
     if (titan.dying <= 0) {
       titan.dead = true;
-      explosionFx(titan.x + titan.w / 2, titan.y + 50, true);
-      explosionFx(titan.x + titan.w / 2, titan.y + 20, true);
+      explosionFx(titan.x + titan.w / 2, titan.y + 75, true);
+      explosionFx(titan.x + titan.w / 2, titan.y + 30, true);
       AUDIO.sExplosion(true);
-      G.shake = 6;
+      G.shake = 9;
       G.hitStop = CONFIG.HITSTOP_BOSS;
       vibrate(150);
       announce('Mission Complete!');
@@ -1471,21 +1590,23 @@ function updateTitan(dt) {
     }
     return;
   }
+  // Asap hitam saat rusak berat / enrage
+  if (titan.hp <= CONFIG.TITAN_HP * 0.5 && Math.random() < dt * 8) spawnSmoke(titan.x + titan.w / 2, titan.y + 10);
   // Berjalan pelan mendekati / menjaga jarak dari pemain
   const pcx = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
   const dist = (titan.x + titan.w / 2) - pcx;
   titan.vx = 0;
-  if (dist > 120) titan.vx = -13;
-  else if (dist < 70) titan.vx = 9;
+  if (dist > 180) titan.vx = -20;
+  else if (dist < 105) titan.vx = 14;
   titan.x += titan.vx * dt;
-  titan.x = clamp(titan.x, 2920, 3230);
+  titan.x = clamp(titan.x, 4250, 4496);
   // Langkah berat menimbulkan suara & getar kecil berkala
   titan.stepT -= dt;
-  if (titan.vx !== 0 && titan.stepT <= 0) { titan.stepT = 0.55; AUDIO.sStomp(); G.shake = Math.max(G.shake, 0.7); }
+  if (titan.vx !== 0 && titan.stepT <= 0) { titan.stepT = 0.55; AUDIO.sStomp(); G.shake = Math.max(G.shake, 1); }
 
   // Arah lengan meriam ke pemain (untuk digambar)
-  const mx = titan.x + 2, my = titan.y + 34;
-  titan.armAng = Math.atan2((player.y + 16) - my, pcx - mx);
+  const mx = titan.x + 3, my = titan.y + 51;
+  titan.armAng = Math.atan2((player.y + 24) - my, pcx - mx);
 
   // Mesin pola serangan (enrage: tempo 0.62x)
   const tempo = titanEnraged() ? 0.62 : 1;
@@ -1500,15 +1621,15 @@ function updateTitan(dt) {
       else if (titan.pattern === 1) {
         // Hentakan kaki: gelombang tanah ke arah pemain
         AUDIO.sStomp();
-        G.shake = Math.max(G.shake, 3);
+        G.shake = Math.max(G.shake, 4);
         vibrate(60);
         const wv = poolGet(groundWaves);
-        if (wv) { wv.active = true; wv.fromBoss = true; wv.dir = pcx < titan.x ? -1 : 1; wv.x = wv.dir < 0 ? titan.x - 6 : titan.x + titan.w + 6; wv.speed = 120; }
+        if (wv) { wv.active = true; wv.fromBoss = true; wv.dir = pcx < titan.x ? -1 : 1; wv.x = wv.dir < 0 ? titan.x - 9 : titan.x + titan.w + 9; wv.speed = 180; }
         titan.atkT = 2.4;
       } else {
         // Salvo rudal bahu ke posisi pemain
         const n = titanEnraged() ? 4 : 3;
-        for (let i = 0; i < n; i++) titanMissile(pcx + (i - (n - 1) / 2) * 26);
+        for (let i = 0; i < n; i++) titanMissile(pcx + (i - (n - 1) / 2) * 39);
         titan.atkT = 2.6;
       }
       titan.atkT *= tempo;
@@ -1566,7 +1687,7 @@ function bulletHitWorld(b) {
   // Roket bazooka & rudal Titan bisa ditembak jatuh (kotak longgar di sekitar badan roket)
   for (const r of erockets) {
     if (!r.active) continue;
-    _ent.x = r.x - 4; _ent.y = r.y - 4; _ent.w = 9; _ent.h = 8;
+    _ent.x = r.x - 6; _ent.y = r.y - 6; _ent.w = 13; _ent.h = 12;
     if (overlap(_box, _ent)) {
       r.active = false;
       addScore(100);
@@ -1581,11 +1702,14 @@ function bulletHitWorld(b) {
   // Bola air monster laut bisa ditembak jatuh
   for (const eb of ebullets) {
     if (!eb.active || !eb.water) continue;
-    _ent.x = eb.x - 2; _ent.y = eb.y - 2; _ent.w = 5; _ent.h = 5;
-    if (overlap(_box, _ent)) { eb.active = false; spawnSplashFx(eb.x, eb.y, 4); return true; }
+    _ent.x = eb.x - 3; _ent.y = eb.y - 3; _ent.w = 7; _ent.h = 7;
+    if (overlap(_box, _ent)) { eb.active = false; spawnSplashFx(eb.x, eb.y, 5); return true; }
   }
   if (!slug.destroyed && !slug.occupied && overlap(_box, slug)) return true; // peluru pemain berhenti di Slug parkir
   return false;
+}
+function inRiverX(x) {
+  return (x >= RIVER.x0 && x <= RIVER.x1) || (x >= RIVER2.x0 && x <= RIVER2.x1);
 }
 
 function updateProjectiles(dt) {
@@ -1593,14 +1717,11 @@ function updateProjectiles(dt) {
   for (const b of bullets) {
     if (!b.active) continue;
     b.life -= dt;
-    if (b.life <= 0) {
-      if (b.kind === 'flame' && b.burn > 0) { /* api padam di udara */ }
-      b.active = false; continue;
-    }
+    if (b.life <= 0) { b.active = false; continue; }
     // Homing: roket = ringan; chaser = kuat dengan belokan tajam
     if (b.kind === 'rocket' || b.kind === 'chaser') {
       const turnRate = b.kind === 'chaser' ? 10.5 : 5.5;
-      let bestDx = 0, bestDy = 0, bestD = b.kind === 'chaser' ? 260 : 190, hasBest = false;
+      let bestDx = 0, bestDy = 0, bestD = b.kind === 'chaser' ? 390 : 285, hasBest = false;
       for (const e of enemies) {
         if (!e.spawned || e.state === 'dead') continue;
         const dx = e.x + e.w / 2 - b.x, dy = e.y + e.h / 2 - b.y;
@@ -1608,7 +1729,7 @@ function updateProjectiles(dt) {
         if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; hasBest = true; }
       }
       if (sea.state === 'fighting' && sea.head.rise > 0.4) {
-        const dx = sea.head.x + 22 - b.x, dy = sea.head.y + 18 - b.y;
+        const dx = sea.head.x + 33 - b.x, dy = sea.head.y + 27 - b.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; hasBest = true; }
       }
@@ -1618,7 +1739,7 @@ function updateProjectiles(dt) {
         if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; hasBest = true; }
       }
       if (titan.active && !titan.dead) {
-        const dx = titan.x + titan.w / 2 - b.x, dy = titan.y + 44 - b.y;
+        const dx = titan.x + titan.w / 2 - b.x, dy = titan.y + 66 - b.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; hasBest = true; }
       }
@@ -1633,16 +1754,25 @@ function updateProjectiles(dt) {
         const na = cur + turn;
         b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
       }
-      if (Math.random() < 0.6) spawnParticles(b.x, b.y, 1, ['#e8e4da', '#8f9296'], 8, 0.25, 1, 0);
+      if (Math.random() < 0.6) spawnParticles(b.x, b.y, 1, ['#e8e4da', '#8f9296'], 12, 0.25, 2, 0);
     }
     if (b.kind === 'flame') {
       b.vy += CONFIG.GRAVITY * 0.5 * dt;  // jatuh parabolik
-      if (Math.random() < 0.7) spawnParticles(b.x, b.y, 1, ['#e87e35', '#f2c230', '#d84f35'], 14, 0.22, 2, -30);
+      if (Math.random() < 0.7) spawnParticles(b.x, b.y, 1, ['#e87e35', '#f2c230', '#d84f35'], 21, 0.22, 3, -45);
     }
+    const prevX = b.x, prevY = b.y;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
-    // Laser menembus: tidak berhenti di target pertama; damage sekali per target per peluru
-    _box.x = b.x; _box.y = b.y; _box.w = 4; _box.h = 3;
+    // Laser menembus: tidak berhenti di target pertama; damage sekali per target per peluru (nomor seri).
+    // Kotak laser menutupi SEGMEN yang ditempuh langkah ini: pada fallback
+    // 30fps sinar bergerak 28px/langkah — kotak titik 5px bisa melompati
+    // musuh selebar 23px tepat pada satu fase lattice (audit v3).
+    if (b.laser) {
+      _box.x = Math.min(prevX, b.x); _box.y = Math.min(prevY, b.y);
+      _box.w = Math.abs(b.x - prevX) + 5; _box.h = Math.abs(b.y - prevY) + 4;
+    } else {
+      _box.x = b.x; _box.y = b.y; _box.w = 5; _box.h = 4;
+    }
     let consumed = false;
     if (b.laser) {
       for (const e of enemies) {
@@ -1655,13 +1785,17 @@ function updateProjectiles(dt) {
     } else {
       consumed = bulletHitWorld(b);
     }
-    if (!consumed && b.kind === 'flame' && b.y >= CONFIG.GROUND_Y - 2) {
+    if (!consumed && b.kind === 'flame' && b.y >= CONFIG.GROUND_Y - 3) {
       spawnFlameZone(b.x, CONFIG.GROUND_Y, 1.0, false);   // api membakar tanah 1 detik
       consumed = true;
     }
-    if (!consumed && (b.y >= CONFIG.GROUND_Y - 1 || b.x < 0 || b.x > CONFIG.LEVEL_W || b.y < -40)) {
-      if (b.kind === 'rocket' || b.kind === 'chaser') explodeAt(b.x, Math.min(b.y, CONFIG.GROUND_Y - 2), false, false);
-      else if (b.kind !== 'flame') spawnParticles(b.x, b.y, 2, ['#f2c230'], 30, 0.12, 1, 60);
+    if (!consumed && (b.y >= CONFIG.GROUND_Y - 1 || b.x < 0 || b.x > CONFIG.LEVEL_W || b.y < -60)) {
+      if (b.kind === 'rocket' || b.kind === 'chaser') explodeAt(b.x, Math.min(b.y, CONFIG.GROUND_Y - 3), false, false);
+      else if (b.kind !== 'flame') {
+        // Percikan sesuai permukaan: air di sungai, tanah di darat
+        if (b.y >= CONFIG.GROUND_Y - 2 && inRiverX(b.x)) spawnSplashFx(b.x, CONFIG.GROUND_Y, 4);
+        else spawnParticles(b.x, Math.min(b.y, CONFIG.GROUND_Y - 1), 3, ['#f2c230', '#9a7d4f'], 45, 0.14, 2, 90);
+      }
       consumed = true;
     }
     if (consumed) b.active = false;
@@ -1674,8 +1808,8 @@ function updateProjectiles(dt) {
     b.vy += (b.gravity || 0) * dt;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
-    if (b.x < G.camX - 40 || b.x > G.camX + CONFIG.VIEW_W + 40 || b.y > CONFIG.GROUND_Y + 4) { b.active = false; continue; }
-    _box.x = b.x - 1; _box.y = b.y - 1; _box.w = 3; _box.h = 3;
+    if (b.x < G.camX - 60 || b.x > G.camX + CONFIG.VIEW_W + 60 || b.y > CONFIG.GROUND_Y + 6) { b.active = false; continue; }
+    _box.x = b.x - 2; _box.y = b.y - 2; _box.w = 4; _box.h = 4;
     if (overlap(_box, _pbox)) { b.active = false; hitPlayerByBullet(); }
   }
 
@@ -1685,15 +1819,15 @@ function updateProjectiles(dt) {
     r.blinkT += dt;
     if (r.titan) {
       r.vy += CONFIG.GRAVITY * 0.8 * dt;
-      if (Math.random() < 0.5) spawnParticles(r.x, r.y - 4, 1, ['#8f9296'], 6, 0.3, 1, -10);
+      if (Math.random() < 0.5) spawnParticles(r.x, r.y - 6, 1, ['#8f9296'], 9, 0.3, 2, -15);
     }
     r.x += r.vx * dt;
     r.y += r.vy * dt;
     let boom = false;
-    if (r.y >= CONFIG.GROUND_Y - 2) { r.y = CONFIG.GROUND_Y - 2; boom = true; }
-    if (r.x < G.camX - 60 || r.x > G.camX + CONFIG.VIEW_W + 60 || r.y < -80) r.active = false;
+    if (r.y >= CONFIG.GROUND_Y - 3) { r.y = CONFIG.GROUND_Y - 3; boom = true; }
+    if (r.x < G.camX - 90 || r.x > G.camX + CONFIG.VIEW_W + 90 || r.y < -120) r.active = false;
     if (r.active && !boom) {
-      _box.x = r.x - 3; _box.y = r.y - 2; _box.w = 7; _box.h = 5;
+      _box.x = r.x - 5; _box.y = r.y - 3; _box.w = 10; _box.h = 7;
       playerTargetBox();
       if (overlap(_box, _pbox)) boom = true;
     }
@@ -1704,9 +1838,9 @@ function updateProjectiles(dt) {
   for (const wv of groundWaves) {
     if (!wv.active) continue;
     wv.x += wv.dir * wv.speed * dt;
-    if (wv.x < G.camX - 30 || wv.x > G.camX + CONFIG.VIEW_W + 30) { wv.active = false; continue; }
-    if (Math.random() < 0.8) spawnParticles(wv.x, CONFIG.GROUND_Y - 2, 1, ['#9a7d4f', '#6e5636'], 24, 0.3, 2, -40);
-    _box.x = wv.x - 5; _box.y = CONFIG.GROUND_Y - 11; _box.w = 10; _box.h = 11;
+    if (wv.x < G.camX - 45 || wv.x > G.camX + CONFIG.VIEW_W + 45) { wv.active = false; continue; }
+    if (Math.random() < 0.8) spawnParticles(wv.x, CONFIG.GROUND_Y - 3, 1, ['#9a7d4f', '#6e5636'], 36, 0.3, 3, -60);
+    _box.x = wv.x - 8; _box.y = CONFIG.GROUND_Y - 17; _box.w = 16; _box.h = 17;
     if (player.state === 'normal' && player.onGround && player.invulnT <= 0 && overlap(_box, player)) killPlayer();
     else if (player.state === 'slug' && slug.onGround && overlap(_box, slug)) damageSlug(1);
   }
@@ -1719,13 +1853,13 @@ function updateProjectiles(dt) {
     g.x += g.vx * dt;
     g.y += g.vy * dt;
     let boom = false;
-    if (g.y >= CONFIG.GROUND_Y - 2) { g.y = CONFIG.GROUND_Y - 2; boom = true; }
+    if (g.y >= CONFIG.GROUND_Y - 3) { g.y = CONFIG.GROUND_Y - 3; boom = true; }
     for (const pl of PLATFORMS) {
-      if (g.vy > 0 && g.x > pl.x && g.x < pl.x + pl.w && g.y >= pl.y - 2 && g.y <= pl.y + 6) boom = true;
+      if (g.vy > 0 && g.x > pl.x && g.x < pl.x + pl.w && g.y >= pl.y - 3 && g.y <= pl.y + 9) boom = true;
     }
     if (g.fuse <= 0) boom = true;
     if (!g.hostile) {
-      _box.x = g.x - 2; _box.y = g.y - 2; _box.w = 4; _box.h = 4;
+      _box.x = g.x - 3; _box.y = g.y - 3; _box.w = 6; _box.h = 6;
       if ((cokka.active && !cokka.dead && overlap(_box, cokka)) ||
           (titan.active && !titan.dead && overlap(_box, titan)) ||
           targetSeaParts(_box)) boom = true;
@@ -1742,10 +1876,10 @@ function updateProjectiles(dt) {
     if (!z.active) continue;
     z.t += dt;
     z.tickT -= dt;
-    if (Math.random() < 0.75) spawnParticles(z.x + (Math.random() - 0.5) * z.w, z.y - 2, 1, ['#e87e35', '#f2c230', '#d84f35'], 12, 0.35, 2, -46);
+    if (Math.random() < 0.75) spawnParticles(z.x + (Math.random() - 0.5) * z.w, z.y - 3, 1, ['#e87e35', '#f2c230', '#d84f35'], 18, 0.35, 3, -69);
     if (z.tickT <= 0) {
       z.tickT = CONFIG.BURN_TICK;
-      _box.x = z.x - z.w / 2; _box.y = z.y - 12; _box.w = z.w; _box.h = 13;
+      _box.x = z.x - z.w / 2; _box.y = z.y - 18; _box.w = z.w; _box.h = 20;
       if (!z.hostile) {
         for (const e of enemies) if (e.spawned && e.state !== 'dead' && overlap(_box, e)) damageEnemy(e, 1, 0);
         if (sea.state === 'fighting' && targetSeaParts(_box)) damageSea(1);
@@ -1762,7 +1896,7 @@ function updateProjectiles(dt) {
   for (const pw of pows) {
     pw.animT += dt;
     if (pw.state === 'free') {
-      if (pw.walkT > 0) { pw.walkT -= dt; pw.x += 13 * dt; }
+      if (pw.walkT > 0) { pw.walkT -= dt; pw.x += 20 * dt; }
       else if (player.state === 'normal' && overlap(player, pw)) rewardPow(pw);
     } else if (pw.state === 'done') {
       pw.walkT -= dt;
@@ -1777,7 +1911,7 @@ function updateProjectiles(dt) {
     if (pk.t > 9) pickups.splice(i, 1);
   }
 
-  // --- Partikel ---
+  // --- Partikel (selongsong memantul sekali-dua kali di tanah) ---
   for (const p of particles) {
     if (!p.active) continue;
     p.life -= dt;
@@ -1786,19 +1920,25 @@ function updateProjectiles(dt) {
     p.vy += p.grav * dt;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (p.water && p.y > CONFIG.GROUND_Y + 2) p.active = false;
+    if (p.casing && p.vy > 0 && p.y >= CONFIG.GROUND_Y - 2) {
+      p.y = CONFIG.GROUND_Y - 2;
+      p.vy *= -0.42;
+      p.vx *= 0.7;
+      if (Math.abs(p.vy) < 26) p.vy = 0;
+    }
+    if (p.water && p.y > CONFIG.GROUND_Y + 3) p.active = false;
   }
 }
 function playerTargetBox() {
-  if (player.state === 'slug') { _pbox.x = slug.x + 1; _pbox.y = slug.y - 10; _pbox.w = slug.w - 2; _pbox.h = slug.h + 10; }
-  else { _pbox.x = player.x + 1; _pbox.y = player.y + 2; _pbox.w = player.w - 2; _pbox.h = player.h - 2; }
+  if (player.state === 'slug') { _pbox.x = slug.x + 2; _pbox.y = slug.y - 15; _pbox.w = slug.w - 4; _pbox.h = slug.h + 15; }
+  else { _pbox.x = player.x + 2; _pbox.y = player.y + 3; _pbox.w = player.w - 4; _pbox.h = player.h - 3; }
 }
 
 /* ================= Update utama ===================================== */
 function update(dt) {
   G.time += dt;
   if (G.announceT > 0) G.announceT -= dt;
-  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 9);
+  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 13);
   if (G.screen !== 'play' || G.paused) return;
 
   G.elapsed += dt;
@@ -1816,11 +1956,19 @@ function update(dt) {
   updateTitan(dt);
   updateProjectiles(dt);
 
-  // Kamera: look-ahead mengikuti arah hadap + kunci arena bos
+  // Kamera: look-ahead mengikuti arah hadap + kunci arena bos.
+  // Saat arena terkunci, target kamera DIKLAMP ke rentang arena (bukan
+  // dipaku di tepi kiri): pemain & bos harus selalu terlihat — memaku di
+  // minX membuat 255px arena Monster Laut (termasuk titik muncul 580 dan
+  // pemain sendiri di maxX) berada di luar layar (audit v3).
   const focusX = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
-  const lookAhead = (player.state === 'slug' ? slug.face : player.face) * 26;
-  let target = clamp(focusX + lookAhead - 150, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
-  if (G.arenaLock) target = clamp(G.arenaLock.minX - 10, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+  const lookAhead = (player.state === 'slug' ? slug.face : player.face) * 39;
+  let target = clamp(focusX + lookAhead - 225, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+  if (G.arenaLock) {
+    const camLo = clamp(G.arenaLock.minX - 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+    const camHi = clamp(G.arenaLock.maxX - CONFIG.VIEW_W + 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+    target = clamp(target, camLo, camHi);
+  }
   G.camX += (target - G.camX) * Math.min(1, dt * 7);
   if (Math.abs(target - G.camX) < 0.4) G.camX = target;
 
@@ -1855,6 +2003,19 @@ function groundTileFor(x) {
   for (const s of GROUND_SEGMENTS) if (x >= s.from) kind = s.kind;
   return kind === 'sand' ? SPR.sandTile : (kind === 'dirt' ? SPR.dirtTile : SPR.grassTile);
 }
+function drawWater(river, camX) {
+  const rx0 = Math.max(0, river.x0 - camX), rx1 = Math.min(CONFIG.VIEW_W, river.x1 - camX);
+  if (rx1 <= rx0) return;
+  ctx.fillStyle = '#2b5d8a';
+  ctx.fillRect(rx0, river.waterY, rx1 - rx0, CONFIG.VIEW_H - river.waterY);
+  ctx.fillStyle = '#3f7fbf';
+  ctx.fillRect(rx0, river.waterY, rx1 - rx0, 4);
+  ctx.fillStyle = 'rgba(191,230,242,0.8)';
+  const ripOff = Math.floor(G.time * 20) % 24;
+  for (let x = rx0 - 24 + ripOff; x < rx1; x += 24) ctx.fillRect(x, river.waterY + 9 + ((x * 7) % 3) * 7, 10, 2);
+  ctx.fillStyle = 'rgba(191,230,242,0.35)';
+  for (let x = rx0 - 12 + ((ripOff * 0.5) | 0); x < rx1; x += 36) ctx.fillRect(x, river.waterY + 24, 14, 2);
+}
 
 function render() {
   const camX = Math.round(G.camX);
@@ -1863,85 +2024,76 @@ function render() {
   ctx.save();
   ctx.translate(Math.round(shakeX), Math.round(shakeY));
 
-  // Lapis 1: langit (statis) + awan bergeser sangat pelan (0.05 + waktu)
+  // Lapis 1: langit senja (statis)
   ctx.drawImage(SPR.bgSky, 0, 0);
-  const cloudOff = -Math.floor(camX * 0.05 + G.time * 1.2) % 640;
+  // Lapis 2: awan organik bergeser sangat pelan (0.05 + waktu)
+  const cloudOff = -Math.floor(camX * 0.05 + G.time * 1.8) % 960;
   ctx.drawImage(SPR.cloudStrip, cloudOff, 0);
-  ctx.drawImage(SPR.cloudStrip, cloudOff + 640, 0);
-  // Lapis 2: pegunungan & hutan jauh (0.3)
-  const farOff = -Math.floor(camX * 0.3) % 640;
+  ctx.drawImage(SPR.cloudStrip, cloudOff + 960, 0);
+  // Lapis 3: pegunungan bertekstur & hutan jauh (0.3)
+  const farOff = -Math.floor(camX * 0.3) % 960;
   ctx.drawImage(SPR.bgFar, farOff, 0);
-  ctx.drawImage(SPR.bgFar, farOff + 640, 0);
-  // Lapis 3: palem & semak dekat (0.6)
-  const nearOff = -Math.floor(camX * 0.6) % 640;
-  ctx.drawImage(SPR.bgNear, nearOff, 0);
-  ctx.drawImage(SPR.bgNear, nearOff + 640, 0);
+  ctx.drawImage(SPR.bgFar, farOff + 960, 0);
+  // Lapis 4: hutan tengah bervariasi (0.6)
+  const midOff = -Math.floor(camX * 0.6) % 960;
+  ctx.drawImage(SPR.bgMid, midOff, 0);
+  ctx.drawImage(SPR.bgMid, midOff + 960, 0);
 
-  // Tanah per segmen permukaan
-  for (let wx = Math.floor(camX / 64) * 64; wx < camX + CONFIG.VIEW_W; wx += 64) {
+  // Tanah per segmen permukaan (ubin 96px)
+  for (let wx = Math.floor(camX / 96) * 96; wx < camX + CONFIG.VIEW_W; wx += 96) {
     ctx.drawImage(groundTileFor(wx), wx - camX, CONFIG.GROUND_Y);
   }
-  ctx.fillStyle = '#3d2d1c';
-  ctx.fillRect(0, CONFIG.GROUND_Y + 32, CONFIG.VIEW_W, CONFIG.VIEW_H - CONFIG.GROUND_Y - 32);
 
-  // Sungai: air beranimasi (garis riak bergeser — murah, hanya garis)
-  const rx0 = Math.max(0, RIVER.x0 - camX), rx1 = Math.min(CONFIG.VIEW_W, RIVER.x1 - camX);
-  if (rx1 > rx0) {
-    ctx.fillStyle = '#2b5d8a';
-    ctx.fillRect(rx0, RIVER.waterY, rx1 - rx0, CONFIG.VIEW_H - RIVER.waterY);
-    ctx.fillStyle = '#3f7fbf';
-    ctx.fillRect(rx0, RIVER.waterY, rx1 - rx0, 3);
-    ctx.fillStyle = 'rgba(191,230,242,0.75)';
-    const ripOff = Math.floor(G.time * 14) % 16;
-    for (let x = rx0 - 16 + ripOff; x < rx1; x += 16) ctx.fillRect(x, RIVER.waterY + 6 + ((x * 7) % 3) * 5, 7, 1);
-    // Monster laut di bawah permukaan: kepala & tentakel yang muncul
-    drawSeaMonster(camX);
-  }
+  // Sungai zona 1 (+ Monster Laut) & perairan zona 3
+  drawWater(RIVER, camX);
+  drawSeaMonster(camX);
+  drawWater(RIVER2, camX);
 
   // Platform & jembatan
   for (const pl of PLATFORMS) {
     const sx = pl.x - camX;
     if (sx + pl.w < 0 || sx > CONFIG.VIEW_W) continue;
-    if (pl === BRIDGE) {
-      for (let x = 0; x < pl.w; x += 64) {
-        const cw = Math.min(64, pl.w - x);
-        ctx.drawImage(SPR.bridgeTile, 0, 0, cw, 12, sx + x, pl.y, cw, 12);
+    if (pl.bridge) {
+      for (let x = 0; x < pl.w; x += 96) {
+        const cw = Math.min(96, pl.w - x);
+        ctx.drawImage(SPR.bridgeTile, 0, 0, cw, 18, sx + x, pl.y, cw, 18);
       }
       // Pilar jembatan masuk ke air
       ctx.fillStyle = '#6e3d20';
-      for (let px = 30; px < pl.w; px += 100) ctx.fillRect(sx + px, pl.y + 12, 6, CONFIG.GROUND_Y - pl.y - 12 + 20);
+      for (let px = 45; px < pl.w; px += 150) ctx.fillRect(sx + px, pl.y + 18, 9, CONFIG.GROUND_Y - pl.y - 18 + 30);
     } else {
-      for (let x = 0; x < pl.w; x += 32) {
-        const cw = Math.min(32, pl.w - x);
-        ctx.drawImage(SPR.woodTile, 0, 0, cw, 10, sx + x, pl.y, cw, 10);
+      for (let x = 0; x < pl.w; x += 48) {
+        const cw = Math.min(48, pl.w - x);
+        ctx.drawImage(SPR.woodTile, 0, 0, cw, 15, sx + x, pl.y, cw, 15);
       }
       ctx.fillStyle = '#6e3d20';
-      ctx.fillRect(sx + 4, pl.y + 10, 4, CONFIG.GROUND_Y - pl.y - 10);
-      ctx.fillRect(sx + pl.w - 8, pl.y + 10, 4, CONFIG.GROUND_Y - pl.y - 10);
+      ctx.fillRect(sx + 6, pl.y + 15, 6, CONFIG.GROUND_Y - pl.y - 15);
+      ctx.fillRect(sx + pl.w - 12, pl.y + 15, 6, CONFIG.GROUND_Y - pl.y - 15);
     }
   }
 
   // Menara pengawas
   for (const tw of TOWER_DEFS) {
     const sx = tw.x - camX;
-    if (sx + 34 < 0 || sx > CONFIG.VIEW_W) continue;
-    ctx.drawImage(SPR.tower, sx, CONFIG.GROUND_Y - 64);
+    if (sx + 50 < 0 || sx > CONFIG.VIEW_W) continue;
+    ctx.drawImage(SPR.tower, sx, CONFIG.GROUND_Y - 96);
   }
-  // Tenda (bisa hancur)
+  // Tenda & gudang (bisa hancur)
   for (const t of tents) {
+    const sx = t.x - camX;
+    if (sx + t.w < 0 || sx > CONFIG.VIEW_W) continue;
     if (t.broken) {
-      // puing tenda
-      const sx = t.x - camX;
+      // puing
       ctx.fillStyle = '#47543a';
-      ctx.fillRect(sx + 4, CONFIG.GROUND_Y - 5, 36, 5);
-      ctx.fillRect(sx + 12, CONFIG.GROUND_Y - 9, 14, 4);
+      ctx.fillRect(sx + 6, CONFIG.GROUND_Y - 7, t.w - 12, 7);
+      ctx.fillRect(sx + t.w * 0.3, CONFIG.GROUND_Y - 13, t.w * 0.32, 6);
       continue;
     }
-    ctx.drawImage(SPR.tent, t.x - camX, t.y);
+    ctx.drawImage(t.big ? SPR.warehouse : SPR.tent, sx, t.y);
   }
-  // Dekorasi statis
+  // Dekorasi statis rapat (batu, karung pasir, kawat, bunga, reruntuhan...)
   for (const d of DECOR) {
-    const img = d.kind === 'flag' ? SPR.flag : SPR.sign;
+    const img = SPR[d.kind];
     const sx = d.x - camX;
     if (sx + img.width < 0 || sx > CONFIG.VIEW_W) continue;
     ctx.drawImage(img, sx, CONFIG.GROUND_Y - img.height);
@@ -1949,9 +2101,9 @@ function render() {
   // Tong bahan bakar
   for (const f of fuels) {
     if (f.broken) continue;
-    ctx.drawImage(SPR.barrel, f.x - 3 - camX, f.y - 1);
+    ctx.drawImage(SPR.barrel, f.x - camX, f.y);
     ctx.fillStyle = '#f2c230';
-    ctx.fillRect(f.x - camX + 3, f.y + 3, 2, 2); // penanda segitiga bahaya sederhana
+    ctx.fillRect(f.x - camX + 5, f.y + 5, 3, 3); // penanda bahaya
   }
   // Peti
   for (const c of crates) {
@@ -1967,7 +2119,7 @@ function render() {
     if (pw.state === 'hidden') continue;
     if (pw.state === 'done' && pw.walkT <= 0) continue;
     const sx = pw.x - camX;
-    if (sx + 20 < 0 || sx > CONFIG.VIEW_W) continue;
+    if (sx + 30 < 0 || sx > CONFIG.VIEW_W) continue;
     let img;
     if (pw.state === 'tied') img = SPR.powTied;
     else if (pw.state === 'done') img = SPR.powWave[(pw.animT * 4) % 2 | 0];
@@ -1976,24 +2128,23 @@ function render() {
     drawEntitySprite(img, _ent, false);
   }
 
-  // Pickup
+  // Pickup (ikon terpusat di kotak pickup)
   for (const pk of pickups) {
     if (pk.t > 7.5 && (pk.t * 6 | 0) % 2 === 0) continue;
     const img = pk.kind === 'grenade' ? SPR.iconGrenade : (pk.kind === 'firebomb' ? SPR.iconFirebomb : (pk.kind === 'cannon' ? SPR.iconCannon : SPR[WEAPON_ICON[pk.kind]]));
-    const bob = Math.sin(pk.t * 4) * 1.5;
-    // Pancaran berkala di belakang ikon
+    const bob = Math.sin(pk.t * 4) * 2;
     if ((pk.t * 2 | 0) % 2 === 0) {
       ctx.fillStyle = 'rgba(242,194,48,0.25)';
-      ctx.fillRect(Math.round(pk.x - camX - 4), Math.round(pk.y - 8 + bob), 20, 20);
+      ctx.fillRect(Math.round(pk.x - camX - 6), Math.round(pk.y - 12 + bob), 30, 30);
     }
-    ctx.drawImage(img, Math.round(pk.x - camX - 2), Math.round(pk.y - 6 + bob));
+    ctx.drawImage(img, Math.round(pk.x + pk.w / 2 - img.width / 2 - camX), Math.round(pk.y - 9 + bob));
   }
 
-  // Musuh
+  // Musuh (hit-flash: siluet putih penuh saat hitT aktif)
   for (const e of enemies) {
     if (!e.spawned) continue;
     const sx = e.x - camX;
-    if (sx + 40 < 0 || sx > CONFIG.VIEW_W + 10) continue;
+    if (sx + 55 < 0 || sx > CONFIG.VIEW_W + 15) continue;
     _ent.x = sx; _ent.y = e.y; _ent.w = e.w; _ent.h = e.h;
     const flip = e.face > 0;
     if (e.state === 'dead') {
@@ -2006,28 +2157,34 @@ function render() {
       ctx.restore();
       continue;
     }
-    let img;
-    if (e.type === 'rebel') img = (Math.abs(player.x - e.x) > 54 && e.state !== 'idle') ? SPR.rebelWalk[(e.animT * 6) % 2 | 0] : SPR.rebelShoot;
-    else if (e.type === 'shield') img = e.state === 'flee' ? SPR.shieldBroken : SPR.shieldWalk[(e.animT * 6) % 2 | 0];
-    else if (e.type === 'bazooka') img = SPR.bazIdle;
-    else img = (e.throwShowT > 0) ? SPR.greThrow : SPR.greIdle;
-    drawEntitySprite(img, _ent, flip);
-    if (e.hitT > 0) {
-      ctx.save();
-      ctx.globalAlpha = 0.45;
-      ctx.globalCompositeOperation = 'lighter';
-      drawEntitySprite(img, _ent, flip);
-      ctx.restore();
+    let img, imgF;
+    const flash = e.hitT > 0;
+    if (e.type === 'rebel') {
+      const wi = (e.animT * 6) % 2 | 0;
+      const moving = Math.abs(player.x - e.x) > 81 && e.state !== 'idle';
+      img = moving ? SPR.rebelWalk[wi] : SPR.rebelShoot;
+      imgF = moving ? SPR.rebelWalkF[wi] : SPR.rebelShootF;
     }
+    else if (e.type === 'shield') {
+      const wi = (e.animT * 6) % 2 | 0;
+      img = e.state === 'flee' ? SPR.shieldBroken : SPR.shieldWalk[wi];
+      imgF = e.state === 'flee' ? SPR.shieldBrokenF : SPR.shieldWalkF[wi];
+    }
+    else if (e.type === 'bazooka') { img = SPR.bazIdle; imgF = SPR.bazIdleF; }
+    else {
+      img = (e.throwShowT > 0) ? SPR.greThrow : SPR.greIdle;
+      imgF = (e.throwShowT > 0) ? SPR.greThrowF : SPR.greIdleF;
+    }
+    drawEntitySprite(flash ? imgF : img, _ent, flip);
   }
 
   // Di-Cokka
   if (cokka.active && !cokka.dead) {
     const sx = cokka.x - camX;
-    if (sx + 70 > 0 && sx < CONFIG.VIEW_W + 10) {
-      const recoil = cokka.recoilT > 0 ? 2 : 0;
+    if (sx + 105 > 0 && sx < CONFIG.VIEW_W + 15) {
+      const recoil = cokka.recoilT > 0 ? 3 : 0;
       ctx.drawImage(cokka.hitT > 0 ? SPR.tankFlash : SPR.tank, Math.round(sx + recoil), Math.round(cokka.y));
-      if (cokka.dying <= 0) drawBossBar(sx, cokka.y - 9, 64, cokka.hp, CONFIG.BOSS_HP, '#d84f35');
+      if (cokka.dying <= 0) drawBossBar(sx, cokka.y - 13, 96, cokka.hp, CONFIG.BOSS_HP, '#d84f35');
     }
   }
 
@@ -2042,13 +2199,13 @@ function render() {
   for (const z of flameZones) {
     if (!z.active) continue;
     const fx = z.x - camX;
-    const hgt = 10 + Math.sin(G.time * 30 + z.x) * 2;
+    const hgt = 15 + Math.sin(G.time * 30 + z.x) * 3;
     ctx.fillStyle = 'rgba(216,79,53,0.85)';
     ctx.fillRect(Math.round(fx - z.w / 2), Math.round(z.y - hgt * 0.5), z.w, hgt * 0.5);
     ctx.fillStyle = 'rgba(232,126,53,0.9)';
-    ctx.fillRect(Math.round(fx - z.w / 2 + 3), Math.round(z.y - hgt * 0.8), z.w - 6, hgt * 0.6);
+    ctx.fillRect(Math.round(fx - z.w / 2 + 4), Math.round(z.y - hgt * 0.8), z.w - 8, hgt * 0.6);
     ctx.fillStyle = '#f2c230';
-    ctx.fillRect(Math.round(fx - 3), Math.round(z.y - hgt), 6, hgt * 0.5);
+    ctx.fillRect(Math.round(fx - 4), Math.round(z.y - hgt), 9, hgt * 0.5);
   }
 
   // Proyektil pemain
@@ -2057,31 +2214,31 @@ function render() {
     const sx = b.x - camX;
     if (b.kind === 'rocket' || b.kind === 'chaser') {
       ctx.fillStyle = '#e8e4da';
-      ctx.fillRect(Math.round(sx), Math.round(b.y), 6, 3);
+      ctx.fillRect(Math.round(sx), Math.round(b.y), 9, 4);
       ctx.fillStyle = b.kind === 'chaser' ? '#7ec8e3' : '#d84f35';
-      ctx.fillRect(Math.round(sx) + (b.vx > 0 ? 0 : 4), Math.round(b.y), 2, 3);
+      ctx.fillRect(Math.round(sx) + (b.vx > 0 ? 0 : 6), Math.round(b.y), 3, 4);
     } else if (b.kind === 'shotgun') {
-      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx), Math.round(b.y), 2, 2);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx), Math.round(b.y), 3, 3);
     } else if (b.kind === 'flame') {
       ctx.fillStyle = (G.time * 20 | 0) % 2 ? '#e87e35' : '#f2c230';
-      ctx.fillRect(Math.round(sx), Math.round(b.y), 4, 3);
+      ctx.fillRect(Math.round(sx), Math.round(b.y), 6, 4);
     } else if (b.kind === 'laser') {
-      ctx.fillStyle = '#58c7d8'; ctx.fillRect(Math.round(sx) - 3, Math.round(b.y), 9, 2);
-      ctx.fillStyle = '#e8fbff'; ctx.fillRect(Math.round(sx) - 1, Math.round(b.y), 5, 1);
+      ctx.fillStyle = '#58c7d8'; ctx.fillRect(Math.round(sx) - 4, Math.round(b.y), 13, 3);
+      ctx.fillStyle = '#e8fbff'; ctx.fillRect(Math.round(sx) - 1, Math.round(b.y), 7, 1);
     } else if (b.kind === 'vulcan') {
-      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(Math.round(sx), Math.round(b.y), 3, 2);
+      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(Math.round(sx), Math.round(b.y), 4, 3);
     } else {
-      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(Math.round(sx), Math.round(b.y), 4, 1);
+      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(Math.round(sx), Math.round(b.y), 6, 2);
     }
   }
   // Peluru musuh & bola air
   for (const b of ebullets) {
     if (!b.active) continue;
     if (b.water) {
-      ctx.fillStyle = '#7ec8e3'; ctx.fillRect(Math.round(b.x - camX), Math.round(b.y), 4, 4);
-      ctx.fillStyle = '#e8fbff'; ctx.fillRect(Math.round(b.x - camX) + 1, Math.round(b.y), 1, 1);
+      ctx.fillStyle = '#7ec8e3'; ctx.fillRect(Math.round(b.x - camX), Math.round(b.y), 6, 6);
+      ctx.fillStyle = '#e8fbff'; ctx.fillRect(Math.round(b.x - camX) + 2, Math.round(b.y) + 1, 2, 2);
     } else {
-      ctx.fillStyle = '#ff9d5c'; ctx.fillRect(Math.round(b.x - camX), Math.round(b.y), 3, 2);
+      ctx.fillStyle = '#ff9d5c'; ctx.fillRect(Math.round(b.x - camX), Math.round(b.y), 4, 3);
     }
   }
   // Roket musuh (berkedip) & rudal Titan
@@ -2091,11 +2248,11 @@ function render() {
     const blink = (r.blinkT * 9 | 0) % 2 === 0;
     ctx.fillStyle = blink ? '#e8e4da' : '#d84f35';
     if (r.titan) {
-      ctx.fillRect(Math.round(sx) - 2, Math.round(r.y) - 5, 4, 8);
-      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) - 2, Math.round(r.y) + 3, 4, 2);
+      ctx.fillRect(Math.round(sx) - 3, Math.round(r.y) - 7, 6, 12);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) - 3, Math.round(r.y) + 5, 6, 3);
     } else {
-      ctx.fillRect(Math.round(sx) - 3, Math.round(r.y) - 1, 7, 3);
-      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) + (r.vx > 0 ? -5 : 4), Math.round(r.y) - 1, 2, 3);
+      ctx.fillRect(Math.round(sx) - 5, Math.round(r.y) - 2, 10, 4);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) + (r.vx > 0 ? -7 : 6), Math.round(r.y) - 2, 3, 4);
     }
   }
   // Granat & peluru meriam
@@ -2103,14 +2260,14 @@ function render() {
     if (!g.active) continue;
     const sx = g.x - camX;
     if (g.shell) {
-      ctx.fillStyle = '#3b4046'; ctx.fillRect(Math.round(sx) - 2, Math.round(g.y) - 2, 5, 5);
-      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) - 1, Math.round(g.y) - 1, 2, 2);
+      ctx.fillStyle = '#3b4046'; ctx.fillRect(Math.round(sx) - 3, Math.round(g.y) - 3, 7, 7);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx) - 1, Math.round(g.y) - 1, 3, 3);
     } else if (g.firebomb) {
-      ctx.fillStyle = '#d84f35'; ctx.fillRect(Math.round(sx) - 1, Math.round(g.y) - 1, 3, 3);
-      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx), Math.round(g.y), 1, 1);
+      ctx.fillStyle = '#d84f35'; ctx.fillRect(Math.round(sx) - 2, Math.round(g.y) - 2, 4, 4);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(Math.round(sx), Math.round(g.y), 2, 2);
     } else {
       ctx.fillStyle = g.hostile ? '#8f2f2f' : '#3e5c2b';
-      ctx.fillRect(Math.round(sx) - 1, Math.round(g.y) - 1, 3, 3);
+      ctx.fillRect(Math.round(sx) - 2, Math.round(g.y) - 2, 4, 4);
     }
   }
   // Gelombang tanah
@@ -2118,11 +2275,11 @@ function render() {
     if (!wv.active) continue;
     const sx = wv.x - camX;
     ctx.fillStyle = '#9a7d4f';
-    ctx.fillRect(Math.round(sx) - 5, CONFIG.GROUND_Y - 9, 10, 9);
+    ctx.fillRect(Math.round(sx) - 8, CONFIG.GROUND_Y - 14, 16, 14);
     ctx.fillStyle = '#b08d58';
-    ctx.fillRect(Math.round(sx) - 3, CONFIG.GROUND_Y - 12, 6, 5);
+    ctx.fillRect(Math.round(sx) - 5, CONFIG.GROUND_Y - 18, 10, 7);
     ctx.fillStyle = '#6e5636';
-    ctx.fillRect(Math.round(sx) + (wv.dir > 0 ? 2 : -5), CONFIG.GROUND_Y - 6, 3, 4);
+    ctx.fillRect(Math.round(sx) + (wv.dir > 0 ? 3 : -8), CONFIG.GROUND_Y - 9, 5, 6);
   }
 
   // Bayangan peringatan tentakel monster laut
@@ -2131,12 +2288,12 @@ function render() {
       if (t.state !== 'warn') continue;
       const sx = t.warnX - camX;
       ctx.fillStyle = (G.time * 8 | 0) % 2 ? 'rgba(216,79,53,0.5)' : 'rgba(242,194,48,0.5)';
-      ctx.fillRect(Math.round(sx) - 2, CONFIG.GROUND_Y - 2, t.w + 4, 3);
-      ctx.fillRect(Math.round(sx) + 5, CONFIG.GROUND_Y - 6, 3, 3);
+      ctx.fillRect(Math.round(sx) - 3, CONFIG.GROUND_Y - 3, t.w + 6, 4);
+      ctx.fillRect(Math.round(sx) + 7, CONFIG.GROUND_Y - 9, 5, 5);
     }
   }
 
-  // Partikel (termasuk bingkai ledakan sprite & cipratan)
+  // Partikel (bingkai ledakan sprite, cipratan, selongsong, debu, asap)
   for (const p of particles) {
     if (!p.active) continue;
     const sx = p.x - camX;
@@ -2154,16 +2311,13 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // Semak foreground tipis di tepi bawah (digambar terakhir, semi-transparan)
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = '#16240f';
-  const fgOff = -(camX % 46);
-  for (let x = fgOff; x < CONFIG.VIEW_W; x += 46) {
-    ctx.fillRect(x + 3, CONFIG.VIEW_H - 5, 2, 5);
-    ctx.fillRect(x + 8, CONFIG.VIEW_H - 8, 2, 8);
-    ctx.fillRect(x + 14, CONFIG.VIEW_H - 4, 2, 4);
-    ctx.fillRect(x + 26, CONFIG.VIEW_H - 6, 2, 6);
-    ctx.fillRect(x + 34, CONFIG.VIEW_H - 4, 2, 4);
+  // Lapis foreground: rumpun tepi bawah bergoyang pelan (2 varian)
+  ctx.globalAlpha = 0.55;
+  const fgOff = -Math.floor(camX * 1.15) % 120;
+  let tuftIdx = Math.floor(camX * 1.15 / 120);
+  for (let x = fgOff - 120; x < CONFIG.VIEW_W; x += 120, tuftIdx++) {
+    const sway = Math.sin(G.time * 1.4 + tuftIdx * 1.7) * 1.6;
+    ctx.drawImage(SPR.fgTufts[((tuftIdx % 2) + 2) % 2], Math.round(x + sway), CONFIG.VIEW_H - 38);
   }
   ctx.globalAlpha = 1;
 
@@ -2174,11 +2328,11 @@ function render() {
     const t = G.announceT;
     const scale = t > 1.25 ? 1 + (t - 1.25) * 2.2 : 1;
     ctx.save();
-    ctx.translate(CONFIG.VIEW_W / 2, 62);
+    ctx.translate(CONFIG.VIEW_W / 2, 92);
     ctx.scale(scale, scale);
-    ctx.font = 'bold 19px "Courier New", monospace';
+    ctx.font = 'bold 26px "Courier New", monospace';
     ctx.textAlign = 'center';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
     ctx.strokeStyle = '#20242a';
     ctx.strokeText(G.announceText, 0, 0);
     ctx.fillStyle = '#f2c230';
@@ -2189,9 +2343,9 @@ function render() {
 
 function drawBossBar(sx, y, wdt, hp, maxHp, color) {
   ctx.fillStyle = '#20242a';
-  ctx.fillRect(Math.round(sx), y, wdt, 5);
+  ctx.fillRect(Math.round(sx), y, wdt, 7);
   ctx.fillStyle = color;
-  ctx.fillRect(Math.round(sx) + 1, y + 1, (wdt - 2) * Math.max(0, hp) / maxHp, 3);
+  ctx.fillRect(Math.round(sx) + 1, y + 1, (wdt - 2) * Math.max(0, hp) / maxHp, 5);
 }
 
 function drawSeaMonster(camX) {
@@ -2199,11 +2353,11 @@ function drawSeaMonster(camX) {
   for (const t of sea.tents) {
     if (t.rise <= 0.02 || sea.state === 'dormant' || sea.state === 'dead') continue;
     const sx = t.x - camX;
-    if (sx + 20 < 0 || sx > CONFIG.VIEW_W) continue;
+    if (sx + 30 < 0 || sx > CONFIG.VIEW_W) continue;
     const img = SPR.tentacle;
     const visH = img.height * t.rise;
     // Ujung tentakel muncul lebih dulu: potong sumber dari ATAS (9 argumen)
-    ctx.drawImage(img, 0, 0, img.width, visH, Math.round(sx - 1), Math.round(CONFIG.GROUND_Y - visH + 6), img.width, visH);
+    ctx.drawImage(img, 0, 0, img.width, visH, Math.round(sx - 1), Math.round(CONFIG.GROUND_Y - visH + 9), img.width, visH);
   }
   if (sea.state === 'dormant' || sea.state === 'dead') return;
   if (sea.head.rise <= 0.02) return;
@@ -2211,27 +2365,26 @@ function drawSeaMonster(camX) {
   const sx = sea.head.x - camX;
   const visH = img.height * sea.head.rise;
   // Kepala muncul dari atasnya dulu: potong sumber dari ATAS (9 argumen)
-  ctx.drawImage(img, 0, 0, img.width, visH, Math.round(sx - 2), Math.round(CONFIG.GROUND_Y + 4 - visH), img.width, visH);
+  ctx.drawImage(img, 0, 0, img.width, visH, Math.round(sx - 3), Math.round(CONFIG.GROUND_Y + 6 - visH), img.width, visH);
 }
 
 function drawSlug(camX) {
   const sx = slug.x - camX;
-  if (sx + 60 < 0 || sx > CONFIG.VIEW_W + 10) return;
+  if (sx + 90 < 0 || sx > CONFIG.VIEW_W + 15) return;
   const sy = slug.y;
   // Badan (flip bila menghadap kiri)
-  drawSprite(slug.hitT > 0 && slug.occupied ? SPR.slugFlash : SPR.slugBody, sx - 6, sy, slug.face < 0);
+  drawSprite(slug.hitT > 0 && slug.occupied ? SPR.slugFlash : SPR.slugBody, sx - 9, sy, slug.face < 0);
   // Kepala pemain mengintip dari palka saat dikendarai
   if (slug.occupied) {
-    ctx.drawImage(SPR.headIcon, Math.round(sx + slug.w / 2 - 5), Math.round(sy - 11));
+    ctx.drawImage(SPR.headIcon, Math.round(sx + slug.w / 2 - 9), Math.round(sy - 20), 18, 18);
   }
-  // Turet berputar 8-arah (asal putar di kubu (20,10) relatif badan)
-  // Turet: sesaat setelah Cannon ditembakkan, tampil varian laras meriam
+  // Turet berputar 8-arah (asal putar di kubu (30,15) relatif kotak)
   const tur = (slug.occupied && slug.cannonCd > CONFIG.CANNON_RATE - 0.15) ? SPR.slugCannon : SPR.slugTurret;
   ctx.save();
-  ctx.translate(Math.round(sx + 20), Math.round(sy + 10));
+  ctx.translate(Math.round(sx + 30), Math.round(sy + 15));
   if (slug.occupied) ctx.rotate(slug.turretAng);
   else ctx.rotate(slug.face > 0 ? 0 : Math.PI);
-  ctx.drawImage(tur, -8, -11);
+  ctx.drawImage(tur, -12, -17);
   ctx.restore();
   // Muzzle flash turet saat baru menembak
   if (slug.occupied && slug.fireCd > CONFIG.VULCAN_RATE - 0.03) {
@@ -2240,36 +2393,36 @@ function drawSlug(camX) {
     ctx.save();
     ctx.translate(Math.round(m.x - camX), Math.round(m.y));
     ctx.rotate(slug.turretAng);
-    ctx.drawImage(img, 0, -4);
+    ctx.drawImage(img, 0, -6);
     ctx.restore();
   }
 }
 
 function drawTitan(camX) {
   const sx = titan.x - camX;
-  if (sx + 70 < 0 || sx > CONFIG.VIEW_W + 10) return;
+  if (sx + 105 < 0 || sx > CONFIG.VIEW_W + 15) return;
   const img = titan.hitT > 0 ? SPR.titanFlash : SPR.titan;
-  // Badan digambar dengan jangkar kiri-atas sprite (64 lebar, badan di x 10..54)
-  ctx.drawImage(img, Math.round(sx - 6), Math.round(titan.y));
-  // Lengan meriam berputar di bahu (relatif sprite (8,30); asal gambar lengan (26,6))
+  // Badan: sprite 96 lebar digambar di titan.x-9 (badan baja di dalamnya)
+  ctx.drawImage(img, Math.round(sx - 9), Math.round(titan.y));
+  // Lengan meriam berputar di bahu (relatif sprite (21,45) -> layar (sx+12, y+45); asal gambar lengan (39,9))
   ctx.save();
-  ctx.translate(Math.round(sx + 8), Math.round(titan.y + 30));
+  ctx.translate(Math.round(sx + 12), Math.round(titan.y + 45));
   ctx.rotate(titan.armAng);
-  ctx.drawImage(SPR.titanArm, -26, -6);
+  ctx.drawImage(SPR.titanArm, -39, -9);
   ctx.restore();
-  // Core berdenyut menyala (dan berkedip putih saat baru kena damage ganda)
+  // Core berdenyut menyala (berkedip putih saat baru kena damage ganda)
   const pulse = 0.6 + 0.4 * Math.sin(G.time * 6);
   ctx.fillStyle = titan.flashCoreT > 0 ? '#ffffff' : (titanEnraged() ? '#ff7a4d' : '#58c7d8');
   ctx.globalAlpha = pulse;
-  ctx.fillRect(Math.round(sx + 22), Math.round(titan.y + 42), 6, 6);
+  ctx.fillRect(Math.round(sx + 34), Math.round(titan.y + 62), 9, 9);
   ctx.globalAlpha = 1;
   // Bar HP bos
   if (titan.dying <= 0) {
-    drawBossBar(sx - 4, titan.y - 10, 60, titan.hp, CONFIG.TITAN_HP, titanEnraged() ? '#ff5a2a' : '#d84f35');
-    ctx.font = 'bold 7px "Courier New", monospace';
+    drawBossBar(sx - 6, titan.y - 14, 90, titan.hp, CONFIG.TITAN_HP, titanEnraged() ? '#ff5a2a' : '#d84f35');
+    ctx.font = 'bold 10px "Courier New", monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
-    ctx.fillText('TITAN', Math.round(sx + 26), Math.round(titan.y - 13));
+    ctx.fillText('TITAN', Math.round(sx + 39), Math.round(titan.y - 18));
     ctx.textAlign = 'left';
   }
 }
@@ -2286,7 +2439,8 @@ function drawPlayer(camX) {
     return;
   }
   const w = p.weapon;
-  if (p.meleeT > 0) img = SPR.pMelee;
+  if (G.clearT > 0 && p.onGround) img = SPR.pVictory;   // pose kemenangan saat Mission Complete
+  else if (p.meleeT > 0) img = SPR.pMelee;
   else if (p.throwT > 0) img = SPR.pThrow;
   else if (p.crouch) {
     if (p.aim === 'up') img = SPR.pCrouchUp[w] || SPR.pCrouch;
@@ -2299,19 +2453,23 @@ function drawPlayer(camX) {
     else img = SPR.pJumpByWeapon[w];
   }
   else if (p.vx !== 0) {
-    img = SPR.pRunByWeapon[w][(p.animT * 10) % 6 | 0];
+    img = SPR.pRunByWeapon[w][(p.animT * 10) % 8 | 0];
   }
   else if (p.fireShowT > 0 || input('fire')) {
     img = p.aim === 'up' ? SPR.pFireUp[w] : (p.aim === 'diag' ? SPR.pFireDiag[w] : SPR.pFireH[w]);
   }
-  else img = SPR.pIdleGun[w] || SPR.pIdle;
+  else {
+    // Idle dengan napas terlihat (2 frame bergantian pelan)
+    const breath = (G.time * 1.6 | 0) % 2 === 0;
+    img = breath ? (SPR.pIdleGun[w] || SPR.pIdle) : (SPR.pIdleGunB[w] || SPR.pIdleB);
+  }
   if (!img) img = SPR.pIdle;
   drawEntitySprite(img, _ent, flip);
   // Muzzle flash di ujung senjata saat menembak
   if (p.fireShowT > 0 && p.meleeT <= 0) {
     const m = computeMuzzle();
     const fimg = SPR.muzzle[(G.time * 24 | 0) % 2];
-    drawSprite(fimg, m.x - camX - 2, m.y - 4, flip);
+    drawSprite(fimg, m.x - camX - 3, m.y - 6, flip);
   }
 }
 
@@ -2326,55 +2484,55 @@ function renderHUD() {
   hudCache = key;
   hudCtx.clearRect(0, 0, CONFIG.VIEW_W, CONFIG.VIEW_H);
   if (G.screen === 'title') return;
-  hudCtx.font = 'bold 9px "Courier New", monospace';
+  hudCtx.font = 'bold 13px "Courier New", monospace';
   hudCtx.textAlign = 'left';
   hudCtx.fillStyle = '#20242a';
-  hudCtx.fillText('SKOR', 7, 11);
+  hudCtx.fillText('SKOR', 11, 17);
   hudCtx.fillStyle = '#ffffff';
-  hudCtx.fillText('SKOR', 6, 10);
+  hudCtx.fillText('SKOR', 10, 16);
   hudCtx.fillStyle = '#f2c230';
-  hudCtx.fillText(String(G.score).padStart(6, '0'), 34, 10);
+  hudCtx.fillText(String(G.score).padStart(6, '0'), 52, 16);
   // Nyawa: ikon kepala + jumlah sisa
   const livesLeft = Math.max(0, G.lives - 1);
-  hudCtx.drawImage(SPR.headIcon, 6, 14, 10, 10);
+  hudCtx.drawImage(SPR.headIcon, 10, 22, 15, 15);
   hudCtx.fillStyle = '#ffffff';
-  hudCtx.fillText('x' + livesLeft, 18, 22);
+  hudCtx.fillText('x' + livesLeft, 28, 34);
   if (inSlug) {
     // Panel Slug: bar ARMOR oranye + amunisi CANNON (menggantikan ARMS)
     hudCtx.fillStyle = '#ffffff';
-    hudCtx.fillText('SLUG ARMOR', 6, 36);
+    hudCtx.fillText('SLUG ARMOR', 10, 52);
     hudCtx.fillStyle = '#20242a';
-    hudCtx.fillRect(6, 39, 62, 6);
+    hudCtx.fillRect(10, 57, 92, 9);
     hudCtx.fillStyle = '#e87e35';
-    hudCtx.fillRect(7, 40, 60 * Math.max(0, slug.armor) / CONFIG.SLUG_ARMOR, 4);
+    hudCtx.fillRect(11, 58, 90 * Math.max(0, slug.armor) / CONFIG.SLUG_ARMOR, 7);
     hudCtx.fillStyle = '#7ec8e3';
-    hudCtx.fillText('CANNON ' + slug.cannon, 6, 55);
+    hudCtx.fillText('CANNON ' + slug.cannon, 10, 82);
     hudCtx.fillStyle = '#ffffff';
-    hudCtx.fillText(bombTxt, 74, 55);
+    hudCtx.fillText(bombTxt, 120, 82);
   } else {
     const wname = WEAPONS[player.weapon].name;
     const ammoTxt = player.weapon === 'handgun' ? 'ARMS ∞' : 'ARMS ' + player.ammo;
     hudCtx.fillStyle = '#ffffff';
-    hudCtx.fillText(wname, 6, 36);
+    hudCtx.fillText(wname, 10, 52);
     hudCtx.fillStyle = '#7ec8e3';
-    hudCtx.fillText(ammoTxt, 6, 47);
+    hudCtx.fillText(ammoTxt, 10, 68);
     hudCtx.fillStyle = '#ffffff';
-    hudCtx.fillText(bombTxt, 52, 47);
+    hudCtx.fillText(bombTxt, 84, 68);
     if (player.firebombs > 0 && player.grenadeType === 'normal') {
       hudCtx.fillStyle = '#e87e35';
-      hudCtx.fillText('FIRE x' + player.firebombs, 104, 47);
+      hudCtx.fillText('FIRE x' + player.firebombs, 168, 68);
     }
   }
   // Timer tengah atas
   hudCtx.textAlign = 'center';
-  hudCtx.font = 'bold 13px "Courier New", monospace';
+  hudCtx.font = 'bold 20px "Courier New", monospace';
   hudCtx.fillStyle = G.timer <= 10 ? '#d84f35' : '#ffffff';
-  hudCtx.fillText(String(Math.max(0, G.timer)), CONFIG.VIEW_W / 2, 13);
+  hudCtx.fillText(String(Math.max(0, G.timer)), CONFIG.VIEW_W / 2, 20);
   // POW kanan atas
   hudCtx.textAlign = 'right';
-  hudCtx.font = 'bold 9px "Courier New", monospace';
+  hudCtx.font = 'bold 13px "Courier New", monospace';
   hudCtx.fillStyle = '#ffffff';
-  hudCtx.fillText('POW x' + G.powSaved, CONFIG.VIEW_W - 6, 10);
+  hudCtx.fillText('POW x' + G.powSaved, CONFIG.VIEW_W - 10, 16);
   hudCtx.textAlign = 'left';
 }
 
@@ -2439,7 +2597,7 @@ document.getElementById('resumeBtn').addEventListener('click', () => setPaused(f
 document.getElementById('quitBtn').addEventListener('click', () => {
   AUDIO.stopMusic();
   G.screen = 'title';
-  G.paused = false; G.autoPaused = false;
+  G.paused = false;
   G.announceT = 0;
   G.announceText = '';
   jumpPressed = false;
@@ -2448,7 +2606,10 @@ document.getElementById('quitBtn').addEventListener('click', () => {
   showScreen('titleScreen');
 });
 document.getElementById('pauseBtn').addEventListener('click', () => { if (G.screen === 'play') togglePause(); });
-document.getElementById('fsBtn').addEventListener('click', () => { goLandscapeFullscreen(); });
+document.getElementById('fsBtn').addEventListener('click', toggleFullscreen);
+document.getElementById('rotBtn').addEventListener('click', toggleRotate);
+syncFsBtn();
+syncRotBtn();
 
 function bindSetting(id, key2, apply) {
   const el = document.getElementById(id);
@@ -2459,9 +2620,6 @@ function bindSetting(id, key2, apply) {
     if (key2 === 'vibrate' && el.checked) vibrate(30);
   });
 }
-bindSetting('optFullscreen', 'fullscreen', null);
 bindSetting('optMusic', 'music', (on) => { AUDIO.init(); AUDIO.setMusicOn(on); });
 bindSetting('optSfx', 'sfx', (on) => { AUDIO.init(); AUDIO.setSfxOn(on); });
 bindSetting('optVibrate', 'vibrate', null);
-
-checkOrientation();
