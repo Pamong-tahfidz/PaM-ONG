@@ -1,9 +1,16 @@
 'use strict';
 /* =====================================================================
-   PaM-ONG — game.js (v4)
-   Run-and-gun Metal Slug — Misi 1 (5 zona): Monster Laut -> SV-001 ->
+   PaM-ONG — game.js (v5)
+   Run-and-gun Metal Slug — Misi 1 (7 zona): Monster Laut -> SV-001 ->
    Di-Cokka -> ROBOT TITAN. Vanilla Canvas 2D, fixed timestep, pooling.
-   v3: dunia 480x270 & level 4600px; fullscreen/landscape = TOMBOL
+   v5: GAME FEEL jadi prioritas — kamera damping + deadzone + lookahead
+   halus; siklus lari digerakkan JARAK tempuh (kaki sinkron tanah, tidak
+   meluncur); pisau melukai bos + knockback musuh; hit-stop berjenjang;
+   recoil senjata; teks skor melayang & popup hadiah POW gaya arcade;
+   panah GO! berkala; HIGH SCORE persisten (localStorage); Misi 1
+   diperluas 4600 -> 6400px (2 zona baru); Di-Cokka memakai aset tank
+   CC0 (2D Tyrant) bila set aset utama teraplikasi (assets.js).
+   v3: dunia 480x270; fullscreen/landscape = TOMBOL
    MANUAL (tidak ada request/orientasi/pause otomatis); grafik & juice
    dirombak (selongsong, debu kaki, percikan permukaan, hit-flash).
    Aturan proyek (docs/KOREKSI.md) WAJIB: pointer capture di tombol
@@ -18,7 +25,7 @@
 const CONFIG = {
   VIEW_W: 480, VIEW_H: 270,
   GROUND_Y: 232,
-  LEVEL_W: 4600,
+  LEVEL_W: 6400,
   GRAVITY: 1350,
   GRAVITY_UP: 930,               // gravitasi saat naik (lompatan melayang ala MS)
   PLAYER_SPEED: 156,
@@ -29,7 +36,7 @@ const CONFIG = {
   MAX_GRENADES: 30,
   TIMER_START: 99,
   RESPAWN_INVULN: 2.0,
-  MELEE_RANGE: 26,
+  MELEE_RANGE: 30,
   POW_BONUS: 5000,
   POW_ITEM_SCORE: 1000,
   BULLET_POOL: 260,
@@ -38,6 +45,20 @@ const CONFIG = {
   PARTICLE_POOL: 240,
   FLAME_ZONE_POOL: 24,
   BURN_TICK: 0.25,               // jeda tick damage api membakar
+  // --- Kamera & rasa gerak (v5) ---
+  CAM_DEADZONE: 26,              // px dari pusat layar: fokus di dalamnya = kamera diam
+  CAM_SMOOTH: 5.2,               // laju damping posisi kamera (per detik)
+  CAM_LOOK_SMOOTH: 3.4,          // laju damping lookahead
+  CAM_LOOK_FACE: 44,             // lookahead maksimum dari arah hadap (px)
+  RUN_CYCLE_DIST: 13,            // px jarak tempuh per frame siklus lari (sinkron tanah)
+  // --- Hit-stop berjenjang (v5) ---
+  HITSTOP_KILL: 0.02,            // kill musuh biasa
+  HITSTOP_MELEE: 0.045,          // serangan pisau kena
+  HITSTOP_BOSSDEATH: 0.05,       // mini-boss mati (Titan punya sendiri di bawah)
+  HITSTOP_BOSS: 0.06,            // hit-stop 60ms saat bos meledak
+  // --- Panah GO! (v5) ---
+  GO_FIRST: 2.5,                 // GO! pertama muncul sekian detik setelah misi jalan
+  GO_INTERVAL: 7,                // jeda antar GO! saat pemain belum maju
   // --- SV-001 ---
   SLUG_X: 1980,                  // terparkir sebelum jembatan zona 3
   SLUG_W: 60, SLUG_H: 51,
@@ -56,12 +77,16 @@ const CONFIG = {
   BOSS_HP: 60,
   BOSS_SCORE: 1200,
   COKKA_TRIGGER_X: 3400,
-  // --- Robot Titan (bos akhir zona 5) ---
+  // --- Robot Titan (bos akhir zona 7) ---
   TITAN_HP: 240,
   TITAN_SCORE: 15000,
-  TITAN_TRIGGER_X: 4150,
+  TITAN_TRIGGER_X: 5910,
   TITAN_CORE_MULT: 2,            // damage x2 di core dada
-  HITSTOP_BOSS: 0.06             // hit-stop 60ms saat bos meledak
+  // --- Knockback & rasa pukulan (dipindah ke CONFIG oleh audit v5) ---
+  CAM_LOOK_VEL: 0.16,            // faktor kecepatan pemain -> lookahead kamera
+  MELEE_KB_VX: 185, MELEE_KB_T: 0.16,   // knockback pisau
+  KB_VX: 95, KB_T: 0.1,                 // knockback peluru
+  HITSTOP_EXPLODE: 0.03                 // hit-stop ledakan tong/besar
 };
 
 const WEAPONS = {
@@ -103,6 +128,21 @@ function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (err) { /* abaikan */ }
 }
 
+/* ================= High score persisten (localStorage, v5) ==========
+   Skor akhir (skor + bonus POW) terbaik disimpan & ditampilkan di
+   layar judul, HUD, dan layar ringkasan. Gagal baca/tulis (mode
+   privat dsb.) tidak pernah mengganggu permainan. */
+const HS_KEY = 'pamong-highscore';
+let highScore = 0;
+try { highScore = parseInt(localStorage.getItem(HS_KEY), 10) || 0; } catch (err) { highScore = 0; }
+function saveHighScore() {
+  try { localStorage.setItem(HS_KEY, String(highScore)); } catch (err) { /* abaikan */ }
+}
+function syncTitleHi() {
+  const el = document.getElementById('titleHi');
+  if (el) el.textContent = 'SKOR TERBAIK: ' + String(highScore).padStart(6, '0');
+}
+
 /* ================= Canvas & konteks ================================= */
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
@@ -118,12 +158,15 @@ const SPR = buildSprites(CONFIG.GROUND_Y);
   if (ac) { const actx = ac.getContext('2d'); actx.imageSmoothingEnabled = false; actx.drawImage(SPR.avatar, 0, 0); }
 })();
 
-/* ================= Data level (5 zona, 4600px) ======================
+/* ================= Data level (7 zona, 6400px) ======================
    Zona 1 pantai & sungai (0..720) — Monster Laut.
    Zona 2 hutan & menara (720..1850) — jalur atas platform.
    Zona 3 jembatan besar (1850..2750) — SV-001 sebelum jembatan.
    Zona 4 kamp musuh (2750..3850) — tenda, gudang, Di-Cokka.
-   Zona 5 lapangan reruntuhan (3850..4600) — Robot Titan.            */
+   Zona 5 gudang & kamp kedua (3850..5050) — v5: gudang besar, tong
+     berantai kedua, jalur tempur rapat.
+   Zona 6 reruntuhan & menara 3 (5050..5650) — v5.
+   Zona 7 lapangan reruntuhan (5650..6400) — Robot Titan.            */
 const RIVER = { x0: 60, x1: 700, waterY: CONFIG.GROUND_Y };
 const RIVER2 = { x0: 2150, x1: 2750, waterY: CONFIG.GROUND_Y };
 const BRIDGE = { x: 90, y: 172, w: 640, h: 18, bridge: true };
@@ -136,24 +179,28 @@ const PLATFORMS = [
   { x: 1440, y: 170, w: 110, h: 15 },   // jalur atas (bazooka)
   { x: 2520, y: 146, w: 110, h: 15 },   // di atas jembatan zona 3 (bazooka)
   { x: 3375, y: 158, w: 120, h: 15 },   // platform menara 2 (kamp)
-  { x: 3950, y: 160, w: 110, h: 15 }    // reruntuhan zona 5 (bazooka)
+  { x: 3950, y: 160, w: 110, h: 15 },   // gudang zona 5 (bazooka)
+  { x: 5225, y: 158, w: 120, h: 15 }    // platform menara 3 (reruntuhan)
 ];
 // Permukaan tanah per segmen: {from, kind:'grass'|'sand'|'dirt'}
 const GROUND_SEGMENTS = [
   { from: 0, kind: 'sand' }, { from: 720, kind: 'grass' },
-  { from: 1900, kind: 'dirt' }, { from: 3850, kind: 'sand' }
+  { from: 1900, kind: 'dirt' }, { from: 3850, kind: 'grass' },
+  { from: 5050, kind: 'dirt' }, { from: 5650, kind: 'sand' }
 ];
 // Tenda (66x45, hp 4) & gudang (96x60, hp 8, big) bisa dihancurkan.
 const TENT_DEFS = [
   { x: 1700, big: true, drop: 'flame' },
   { x: 2850, drop: 'rocket' },
   { x: 3050, drop: null, hidesPow: true },
-  { x: 3250, drop: 'shotgun' }
+  { x: 3250, drop: 'shotgun' },
+  { x: 4100, big: true, drop: 'laser' },
+  { x: 4650, drop: 'hmg' }
 ];
 // Menara pengawas (dekor kokoh; musuh berdiri di platform di atasnya)
-const TOWER_DEFS = [{ x: 880 }, { x: 3400 }];
+const TOWER_DEFS = [{ x: 880 }, { x: 3400 }, { x: 5250 }];
 // Tong bahan bakar — MELEDAK berantai (pasangan berjarak 60 <= jangkauan rantai 63)
-const FUEL_DEFS = [{ x: 1500 }, { x: 1560 }, { x: 2950 }, { x: 3010 }, { x: 3550 }];
+const FUEL_DEFS = [{ x: 1500 }, { x: 1560 }, { x: 2950 }, { x: 3010 }, { x: 3550 }, { x: 4250 }, { x: 4310 }];
 
 const ENEMY_DEFS = [
   // Zona 1: di jembatan sungai (bertahan saat Monster Laut)
@@ -175,18 +222,32 @@ const ENEMY_DEFS = [
   { type: 'rebel',   x: 3180 }, { type: 'shield', x: 3320 },
   { type: 'grenade', x: 3425, y: 158 },                   // menara 2
   { type: 'rebel',   x: 3600 },
-  // Zona 5: reruntuhan
+  // Zona 5: gudang & kamp kedua
   { type: 'rebel',   x: 3920 }, { type: 'rebel', x: 4020 },
-  { type: 'bazooka', x: 3985, y: 160 }
+  { type: 'bazooka', x: 3985, y: 160 },                   // platform gudang
+  { type: 'shield',  x: 4300 },
+  { type: 'rebel',   x: 4450 },
+  { type: 'rebel',   x: 4720 },
+  { type: 'shield',  x: 4880 },
+  // Zona 6: reruntuhan & menara 3
+  { type: 'rebel',   x: 5150 },
+  { type: 'grenade', x: 5275, y: 158 },                   // menara 3
+  { type: 'shield',  x: 5400 },
+  { type: 'rebel',   x: 5540 },
+  // Zona 7: penjaga terakhir sebelum Titan
+  { type: 'rebel',   x: 5700 },
+  { type: 'shield',  x: 5800 }
 ];
 const ENEMY_H = { rebel: 39, shield: 39, grenade: 39, bazooka: 39 };
 const CRATE_DEFS = [
   { x: 820, drop: 'flame' }, { x: 1380, drop: 'grenade' },
   { x: 1900, drop: 'hmg' }, { x: 2080, drop: 'cannon' },
   { x: 2780, drop: 'chaser' }, { x: 3300, drop: 'firebomb' },
-  { x: 3620, drop: 'shotgun' }
+  { x: 3620, drop: 'shotgun' }, { x: 4400, drop: 'rocket' },
+  { x: 4750, drop: 'grenade' }, { x: 5550, drop: 'chaser' }
 ];
-// 7 POW: jembatan 1, hutan, jalur atas, jembatan 2, balik tenda, kamp, reruntuhan
+// 9 POW: jembatan 1, hutan, jalur atas, jembatan 2, balik tenda, kamp,
+// gudang, kamp kedua, reruntuhan
 const POW_DEFS = [
   { x: 380, y: 172 },
   { x: 1150 },
@@ -194,7 +255,9 @@ const POW_DEFS = [
   { x: 2450, y: 176 },
   { x: 3065, hidden: true },
   { x: 3150 },
-  { x: 4200 }
+  { x: 4200 },
+  { x: 4550 },
+  { x: 5580 }
 ];
 const DECOR = [
   { kind: 'sign', x: 150 }, { kind: 'flowers', x: 480 }, { kind: 'rock', x: 760 },
@@ -204,7 +267,12 @@ const DECOR = [
   { kind: 'wire', x: 3120 }, { kind: 'rock', x: 3200 }, { kind: 'flowers', x: 3480 },
   { kind: 'sign', x: 3660 }, { kind: 'ruin', x: 3900 }, { kind: 'flag', x: 3880 },
   { kind: 'ruin', x: 4120 }, { kind: 'wire', x: 4240 }, { kind: 'rock', x: 4380 },
-  { kind: 'flowers', x: 4520 }
+  { kind: 'flowers', x: 4520 },
+  { kind: 'ruin', x: 4050 }, { kind: 'sandbags', x: 4350 }, { kind: 'wire', x: 4600 },
+  { kind: 'flag', x: 4780 }, { kind: 'rock', x: 4950 }, { kind: 'flowers', x: 5020 },
+  { kind: 'ruin', x: 5120 }, { kind: 'sandbags', x: 5450 }, { kind: 'wire', x: 5620 },
+  { kind: 'ruin', x: 5750 }, { kind: 'flag', x: 5900 }, { kind: 'rock', x: 6050 },
+  { kind: 'ruin', x: 6180 }, { kind: 'flowers', x: 6320 }
 ];
 
 /* ================= State permainan ================================== */
@@ -219,6 +287,9 @@ const G = {
   timerAcc: 0,
   elapsed: 0,
   camX: 0,
+  camLook: 0,             // lookahead kamera teredam saat ini (px, v5)
+  goT: CONFIG.GO_FIRST,   // hitung mundur panah GO! berikutnya (v5)
+  goShowT: 0,             // sisa tampil panah GO! (v5)
   arenaLock: null,        // {minX, maxX, boss} batas kamera+pemain saat bos aktif
   time: 0,
   shake: 0,
@@ -234,7 +305,8 @@ const player = {
   aim: 'h',               // 'h' | 'up' | 'diag' | 'down'
   state: 'normal',        // 'normal' | 'dead' | 'slug'
   deadT: 0, invulnT: 0, fireCd: 0, fireShowT: 0, throwT: 0, meleeT: 0,
-  animT: 0, weapon: 'handgun', ammo: 0, dustT: 0,
+  animT: 0, runDist: 0, recoilT: 0,
+  weapon: 'handgun', ammo: 0, dustT: 0,
   grenades: CONFIG.START_GRENADES, grenadeType: 'normal', firebombs: 0
 };
 
@@ -266,9 +338,9 @@ const cokka = {
   active: false, dead: false, dying: 0, dir: -1, moveT: 0, fireT: 2.2, hitT: 0, recoilT: 0, laserMark: null
 };
 
-// Robot Titan (bos akhir). Core dada: pita vertikal y+57..y+75.
+// Robot Titan (bos akhir). Core dada: pita vertikal mengikuti visual aktif.
 const titan = {
-  x: 4400, y: CONFIG.GROUND_Y - 150, w: 78, h: 150, hp: CONFIG.TITAN_HP,
+  x: 6200, y: CONFIG.GROUND_Y - 150, w: 78, h: 150, hp: CONFIG.TITAN_HP,
   active: false, dead: false, dying: 0, stateT: 0, atkT: 2.0, pattern: 0,
   burstN: 0, burstT: 0, armAng: Math.PI, stepT: 0, vx: 0, hitT: 0, flashCoreT: 0,
   introT: 0, laserMark: null
@@ -296,9 +368,21 @@ let bulletSerial = 0;   // nomor seri unik tiap aktivasi peluru pemain — penan
 const ebullets = makePool(CONFIG.EBULLET_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, water: false, gravity: 0 }));
 const erockets = makePool(24, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, blinkT: 0, titan: false }));
 const grenades = makePool(CONFIG.GRENADE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, hostile: false, shell: false, firebomb: false, fuse: 0 }));
-const particles = makePool(CONFIG.PARTICLE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: '#fff', grav: 0, boom: -1, water: false, casing: false }));
+const particles = makePool(CONFIG.PARTICLE_POOL, () => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: '#fff', grav: 0, boom: -1, boomBig: false, water: false, casing: false }));
 const flameZones = makePool(CONFIG.FLAME_ZONE_POOL, () => ({ active: false, x: 0, y: 0, w: 39, t: 0, dur: 1, tickT: 0, hostile: false }));
 const groundWaves = makePool(6, () => ({ active: false, x: 0, dir: 1, speed: 180, fromBoss: true }));
+// Teks melayang gaya arcade (skor kill, popup hadiah POW) — pool tetap,
+// string hanya diganti saat spawn (bukan alokasi per frame).
+const floatTexts = makePool(24, () => ({ active: false, x: 0, y: 0, vy: 0, life: 0, maxLife: 1, text: '', color: '#ffffff', big: false }));
+function spawnFloatText(x, y, text, color, big) {
+  const f = poolGet(floatTexts);
+  if (!f) return;
+  f.active = true;
+  f.x = x; f.y = y; f.vy = -46;
+  f.maxLife = big ? 1.15 : 0.8;
+  f.life = f.maxLife;
+  f.text = text; f.color = color || '#ffffff'; f.big = !!big;
+}
 // Kotak coretan dipakai ulang — dilarang alokasi objek per frame (KOREKSI.md).
 const _box = { x: 0, y: 0, w: 0, h: 0 };
 const _pbox = { x: 0, y: 0, w: 0, h: 0 };
@@ -325,7 +409,7 @@ function spawnBoom(x, y, big) {
   // Ledakan sprite berbingkai berlapis (bukan sekadar partikel kotak)
   const p = poolGet(particles);
   if (p) {
-    p.active = true; p.boom = 0; p.water = false; p.casing = false;
+    p.active = true; p.boom = 0; p.boomBig = !!big; p.water = false; p.casing = false;
     p.x = x; p.y = y; p.vx = 0; p.vy = 0;
     p.maxLife = 0.34; p.life = 0.34; p.size = big ? 1.6 : 1; p.grav = 0; p.color = '#fff';
   }
@@ -593,7 +677,8 @@ function buildLevel() {
     w: d.type === 'shield' ? 30 : 23, h: ENEMY_H[d.type],
     face: -1, state: 'idle', hp: 1, shieldHp: d.type === 'shield' ? 4 : 0,
     active: false, spawned: false, fireT: 1 + Math.random(), throwT: 1.5 + Math.random(), throwShowT: 0,
-    animT: Math.random() * 0.4, deadT: 0, hitT: 0, fleeT: 0, vx: 0, rocketT: 2 + Math.random() * 1.5,
+    animT: Math.random() * 0.4, runDist: 0, kbT: 0, kbVx: 0,
+    deadT: 0, hitT: 0, fleeT: 0, vx: 0, rocketT: 2 + Math.random() * 1.5,
     laserMark: null
   }));
   crates = CRATE_DEFS.map((d) => ({ x: d.x, y: CONFIG.GROUND_Y - 27, w: 27, h: 27, hp: 2, drop: d.drop, broken: false }));
@@ -623,7 +708,7 @@ function buildLevel() {
   cokka.active = false; cokka.dead = false; cokka.dying = 0; cokka.dir = -1;
   cokka.moveT = 0; cokka.fireT = 2.2; cokka.hitT = 0; cokka.recoilT = 0; cokka.laserMark = null;
   // Reset Titan
-  titan.x = 4400; titan.y = CONFIG.GROUND_Y - titan.h; titan.hp = CONFIG.TITAN_HP;
+  titan.x = 6200; titan.y = CONFIG.GROUND_Y - titan.h; titan.hp = CONFIG.TITAN_HP;
   titan.active = false; titan.dead = false; titan.dying = 0; titan.stateT = 0;
   titan.atkT = 2.0; titan.pattern = 0; titan.burstN = 0; titan.burstT = 0;
   titan.armAng = Math.PI; titan.stepT = 0; titan.vx = 0; titan.hitT = 0;
@@ -632,7 +717,7 @@ function buildLevel() {
 }
 
 function resetPools() {
-  for (const arr of [bullets, ebullets, erockets, grenades, particles, flameZones, groundWaves]) {
+  for (const arr of [bullets, ebullets, erockets, grenades, particles, flameZones, groundWaves, floatTexts]) {
     for (const o of arr) o.active = false;
   }
 }
@@ -654,13 +739,15 @@ function startGame() {
   G.paused = false;
   G.score = 0; G.lives = CONFIG.START_LIVES; G.powSaved = 0;
   G.timer = CONFIG.TIMER_START; G.timerAcc = 0; G.elapsed = 0;
-  G.camX = 0; G.shake = 0; G.hitStop = 0; G.announceT = 0; G.announceText = ''; G.clearT = -1;
+  G.camX = 0; G.camLook = 0; G.goT = CONFIG.GO_FIRST; G.goShowT = 0;
+  G.shake = 0; G.hitStop = 0; G.announceT = 0; G.announceText = ''; G.clearT = -1;
   resetPools();
   buildLevel();
   Object.assign(player, {
     x: 40, y: CONFIG.GROUND_Y - CONFIG.PLAYER_H, w: CONFIG.PLAYER_W, h: CONFIG.PLAYER_H,
     vx: 0, vy: 0, face: 1, onGround: true, crouch: false, aim: 'h', state: 'normal',
     deadT: 0, invulnT: 0, fireCd: 0, fireShowT: 0, throwT: 0, meleeT: 0, animT: 0, dustT: 0,
+    runDist: 0, recoilT: 0,
     weapon: 'handgun', ammo: 0, grenades: CONFIG.START_GRENADES, grenadeType: 'normal', firebombs: 0
   });
   announce('Mission Start!');
@@ -672,16 +759,26 @@ function startGame() {
 function endScreen(win) {
   G.screen = win ? 'clear' : 'over';
   G.paused = false;
+  // Audit v5: bersihkan teks pengumuman sesaat (aturan transisi proyek).
+  // Tanpa ini, announce bos yang masih aktif saat pemain mati di nyawa
+  // terakhir membeku PERMANEN di balik panel akhir (update() berhenti
+  // di luar layar 'play', jadi announceT tidak pernah berkurang lagi).
+  G.announceT = 0; G.announceText = '';
   AUDIO.stopMusic();
   document.getElementById('pauseBtn').classList.add('hidden');
   const powBonus = G.powSaved * CONFIG.POW_BONUS;
   const total = G.score + powBonus;
+  // High score persisten: hanya naik, tidak pernah turun (v5)
+  let rekorBaru = false;
+  if (total > highScore) { highScore = total; rekorBaru = true; saveHighScore(); }
+  syncTitleHi();
   document.getElementById('endTitle').textContent = win ? 'MISI SELESAI!' : 'GAME OVER';
   document.getElementById('endStats').innerHTML =
     'SKOR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ' + G.score + '<br>' +
     'POW DISELAMATKAN: ' + G.powSaved + ' x ' + CONFIG.POW_BONUS + ' = ' + powBonus + '<br>' +
     'WAKTU&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ' + Math.floor(G.elapsed) + ' detik<br>' +
-    '<b>SKOR AKHIR&nbsp;: ' + total + '</b>';
+    '<b>SKOR AKHIR&nbsp;: ' + total + '</b><br>' +
+    'SKOR TERBAIK: ' + highScore + (rekorBaru ? ' &mdash; <b>REKOR BARU!</b>' : '');
   showScreen('endScreen');
 }
 
@@ -713,10 +810,10 @@ function closeSettings() {
 }
 
 /* ================= Senjata & item =================================== */
-function giveWeapon(kind) {
+function giveWeapon(kind, silent) {
   player.weapon = kind;
   player.ammo = WEAPONS[kind].ammo;
-  announce(WEAPON_ANNOUNCE[kind]);
+  if (!silent) announce(WEAPON_ANNOUNCE[kind]);
   AUDIO.sPickup();
 }
 function addGrenades(n) {
@@ -750,12 +847,21 @@ function rewardPow(pw) {
   pw.state = 'done';
   pw.walkT = 0.9;
   G.powSaved++;
+  // Hadiah tampil sebagai POPUP TEKS MELAYANG BESAR gaya arcade tepat
+  // di atas POW ("HEAVY MACHINE GUN!", "+1000") — bukan announcer
+  // tengah layar, agar momennya terbaca di tempat kejadian (v5).
   const roll = Math.random();
-  if (roll < 0.55) giveWeapon(POW_WEAPON_TABLE[(Math.random() * POW_WEAPON_TABLE.length) | 0]);
-  else if (roll < 0.70) addFirebombs(3);
-  else if (roll < 0.85) addGrenades(5);
-  else addScore(CONFIG.POW_ITEM_SCORE);
-  announce('Thank You!');
+  let label;
+  if (roll < 0.55) {
+    const k = POW_WEAPON_TABLE[(Math.random() * POW_WEAPON_TABLE.length) | 0];
+    giveWeapon(k, true);
+    label = WEAPONS[k].name + '!';
+  }
+  else if (roll < 0.70) { addFirebombs(3); label = 'FIRE BOMB!'; }
+  else if (roll < 0.85) { addGrenades(5); label = 'GRENADE +5'; }
+  else { addScore(CONFIG.POW_ITEM_SCORE); label = '+' + CONFIG.POW_ITEM_SCORE; }
+  spawnFloatText(pw.x + pw.w / 2, pw.y - 8, label, '#f2c230', true);
+  AUDIO.sPowFree();
 }
 
 /* ================= Muzzle & tembakan pemain ========================= */
@@ -774,25 +880,43 @@ function computeMuzzle() {
   m.x = cx + p.face * 20; m.y = p.y + 21; return m;
 }
 
-function meleeTarget() {
+function meleeBox() {
   _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
   _box.y = player.y + 3; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 6;
+}
+function meleeTarget() {
+  meleeBox();
   for (const e of enemies) if (e.spawned && e.state !== 'dead' && overlap(_box, e)) return e;
   return null;
 }
-function damageMeleeTarget() {
+function meleeHitFx() {
+  G.hitStop = Math.max(G.hitStop, CONFIG.HITSTOP_MELEE);
+  G.shake = Math.max(G.shake, 1.6);
+}
+// Serangan pisau: mengenai musuh (dengan knockback), BOS (v5 — dulu
+// pisau hanya mengenai musuh/peti/tenda sehingga pemain yang menempel
+// ke bos menembak peluru yang langsung berhenti di badan bos tanpa
+// efek pisau), peti, atau tenda — mana pun yang pertama kena.
+function meleeStrike() {
   const e = meleeTarget();
-  if (e) { damageEnemy(e, 3, player.face); return true; }
-  _box.x = player.face > 0 ? player.x + player.w : player.x - CONFIG.MELEE_RANGE;
-  _box.y = player.y + 3; _box.w = CONFIG.MELEE_RANGE; _box.h = player.h - 6;
-  for (const c of crates) if (!c.broken && overlap(_box, c)) { damageCrate(c, 1); return true; }
-  for (const t of tents) if (!t.broken && overlap(_box, t)) { damageDestructible(t, 1); return true; }
+  if (e) {
+    damageEnemy(e, 3, player.face);
+    e.kbT = CONFIG.MELEE_KB_T; e.kbVx = player.face * CONFIG.MELEE_KB_VX;
+    meleeHitFx();
+    return true;
+  }
+  meleeBox();
+  if (sea.state === 'fighting' && targetSeaParts(_box)) { damageSea(3); meleeHitFx(); return true; }
+  if (cokka.active && !cokka.dead && overlap(_box, cokka)) { damageCokka(3); meleeHitFx(); return true; }
+  if (titan.active && !titan.dead && overlap(_box, titan)) { damageTitan(_box, 3); meleeHitFx(); return true; }
+  for (const c of crates) if (!c.broken && overlap(_box, c)) { damageCrate(c, 1); meleeHitFx(); return true; }
+  for (const t of tents) if (!t.broken && overlap(_box, t)) { damageDestructible(t, 1); meleeHitFx(); return true; }
   return false;
 }
 
 function playerFire() {
   const w = WEAPONS[player.weapon];
-  if (player.crouch === false && player.onGround && damageMeleeTarget()) {
+  if (player.crouch === false && player.onGround && meleeStrike()) {
     player.fireCd = 0.32;
     player.fireShowT = 0.12;
     player.meleeT = 0.18;
@@ -802,6 +926,9 @@ function playerFire() {
   }
   player.fireCd = w.rate;
   player.fireShowT = 0.1;
+  // Recoil visual: badan terdorong mundur sesaat (lebih besar untuk
+  // shotgun/roket) — digambar drawPlayer dari recoilT (v5).
+  player.recoilT = player.weapon === 'shotgun' ? 0.13 : (player.weapon === 'rocket' ? 0.11 : 0.07);
   const m = computeMuzzle();
   const aim = (player.aim === 'diag' && !w.diag) ? 'h' : player.aim;
   const spawn = (ang) => {
@@ -960,13 +1087,19 @@ function damageEnemy(e, dmg, fromDir) {
   }
   e.hp -= dmg;
   e.hitT = 0.08;
+  // Knockback kecil menjauhi arah tembakan (v5); fromDir 0 (zona api)
+  // tidak mendorong. Shield yang menahan dari depan tidak terdorong.
+  if (fromDir) { e.kbT = Math.max(e.kbT, CONFIG.KB_T); e.kbVx = fromDir * CONFIG.KB_VX; }
   AUDIO.sHit();
   if (e.hp <= 0) killEnemy(e);
 }
 function killEnemy(e) {
   e.state = 'dead';
   e.deadT = 0.38;
-  addScore(e.type === 'rebel' ? 100 : 300);
+  const pts = e.type === 'rebel' ? 100 : 300;
+  addScore(pts);
+  spawnFloatText(e.x + e.w / 2, e.y - 4, '+' + pts, '#ffffff', false);
+  G.hitStop = Math.max(G.hitStop, CONFIG.HITSTOP_KILL);
   spawnParticles(e.x + e.w / 2, e.y + 15, 8, ['#d84f35', '#f2c230'], 90, 0.3, 3, 150);
 }
 function damageCrate(c, dmg) {
@@ -1011,6 +1144,8 @@ function damageCokka(dmg) {
   if (cokka.hp <= 0) {
     cokka.dying = 1.6;
     addScore(CONFIG.BOSS_SCORE);
+    spawnFloatText(cokka.x + cokka.w / 2, cokka.y - 10, '+' + CONFIG.BOSS_SCORE, '#f2c230', true);
+    G.hitStop = Math.max(G.hitStop, CONFIG.HITSTOP_BOSSDEATH);
     AUDIO.sExplosion(true);
   }
 }
@@ -1023,6 +1158,8 @@ function damageSea(dmg) {
     sea.state = 'dying';
     sea.dieT = 2.2;
     addScore(CONFIG.SEA_SCORE);
+    spawnFloatText(sea.head.x + 33, sea.head.y - 12, '+' + CONFIG.SEA_SCORE, '#f2c230', true);
+    G.hitStop = Math.max(G.hitStop, CONFIG.HITSTOP_BOSSDEATH);
     AUDIO.sRoar();
     spawnSplashFx(sea.head.x + 33, CONFIG.GROUND_Y, 26);
     if (G.arenaLock && G.arenaLock.boss === 'sea') G.arenaLock = null;
@@ -1048,6 +1185,7 @@ function damageTitan(box, dmg) {
   if (titan.hp <= 0) {
     titan.dying = 2.2;
     addScore(CONFIG.TITAN_SCORE);
+    spawnFloatText(titan.x + titan.w / 2, titan.y + 40, '+' + CONFIG.TITAN_SCORE, '#f2c230', true);
     AUDIO.sExplosion(true);
     G.hitStop = CONFIG.HITSTOP_BOSS;
   }
@@ -1064,7 +1202,7 @@ function explodeAt(x, y, hostile, big) {
   explosionFx(x, y, big);
   AUDIO.sExplosion(big);
   G.shake = Math.max(G.shake, big ? 4.5 : 3);
-  if (big) vibrate(60);
+  if (big) { vibrate(60); G.hitStop = Math.max(G.hitStop, CONFIG.HITSTOP_EXPLODE); }
   // Reaksi berantai tong bahan bakar
   for (const f of fuels) {
     if (f.broken) continue;
@@ -1176,6 +1314,7 @@ function updatePlayer(dt) {
   if (p.invulnT > 0) p.invulnT -= dt;
   if (p.fireCd > 0) p.fireCd -= dt;
   if (p.fireShowT > 0) p.fireShowT -= dt;
+  if (p.recoilT > 0) p.recoilT -= dt;
   if (p.throwT > 0) p.throwT -= dt;
   if (p.meleeT > 0) p.meleeT -= dt;
   p.animT += dt;
@@ -1214,6 +1353,9 @@ function updatePlayer(dt) {
   }
   const wasGround = p.onGround, fallV = p.vy;
   physicsBody(p, dt, CONFIG.PLAYER_SPEED, CONFIG.PLAYER_JUMP_VEL, true);
+  // Fase siklus lari dari JARAK TEMPUH (v5): kaki sinkron dengan tanah
+  // pada kecepatan berapa pun — tidak ada lagi luncuran waktu murni.
+  if (p.onGround && p.vx !== 0) p.runDist += Math.abs(p.vx) * dt;
   // Debu mendarat & debu kaki saat berlari (juice)
   if (!wasGround && p.onGround && fallV > 240) spawnDust(p.x + p.w / 2, CONFIG.GROUND_Y <= p.y + p.h + 1 ? p.y + p.h : p.y + p.h, 6);
   if (p.onGround && p.vx !== 0) {
@@ -1324,14 +1466,21 @@ function updateEnemies(dt) {
     }
     if (e.hitT > 0) e.hitT -= dt;
     e.animT += dt;
+    // Knockback (v5): geser menjauhi sumber damage, meluruh cepat.
+    if (e.kbT > 0) { e.kbT -= dt; e.x += e.kbVx * dt; e.kbVx *= Math.max(0, 1 - 7 * dt); }
     const ecx = e.x + e.w / 2;
     const dist = Math.abs(pcx - ecx);
     const dirToPlayer = pcx < ecx ? -1 : 1;
 
-    if (e.state === 'dead') { e.deadT -= dt; continue; }
+    if (e.state === 'dead') {
+      e.deadT -= dt;
+      if (e.kbVx) { e.x += e.kbVx * dt; e.kbVx *= Math.max(0, 1 - 7 * dt); }   // mayat ikut tergeser knockback
+      continue;
+    }
     if (e.state === 'flee') {
       e.fleeT += dt;
       e.x += -e.face * 105 * dt;
+      e.runDist = (e.runDist || 0) + 105 * dt;
       if (e.fleeT > 2.2) e.spawned = false;
       continue;
     }
@@ -1379,7 +1528,9 @@ function updateEnemies(dt) {
     // Rebel & Shield
     const stopDist = e.type === 'shield' ? 93 : 78;
     if (dist > stopDist) {
-      e.x += dirToPlayer * (e.type === 'shield' ? 39 : 51) * dt;
+      const mv = (e.type === 'shield' ? 39 : 51) * dt;
+      e.x += dirToPlayer * mv;
+      e.runDist = (e.runDist || 0) + mv;   // fase siklus jalan dari jarak tempuh (v5)
     } else {
       e.fireT -= dt;
       if (e.fireT <= 0) {
@@ -1564,7 +1715,7 @@ function updateTitan(dt) {
     if (player.x > CONFIG.TITAN_TRIGGER_X && player.state !== 'dead') {
       titan.active = true;
       titan.introT = 1.2;
-      G.arenaLock = { minX: 4080, maxX: 4580, boss: 'titan' };
+      G.arenaLock = { minX: 5880, maxX: 6380, boss: 'titan' };
       announce('ROBOT TITAN!');
       AUDIO.sRoar();
       vibrate(100);
@@ -1605,7 +1756,7 @@ function updateTitan(dt) {
   if (dist > 180) titan.vx = -20;
   else if (dist < 105) titan.vx = 14;
   titan.x += titan.vx * dt;
-  titan.x = clamp(titan.x, 4250, 4496);
+  titan.x = clamp(titan.x, 6050, 6296);
   // Langkah berat menimbulkan suara & getar kecil berkala
   titan.stepT -= dt;
   if (titan.vx !== 0 && titan.stepT <= 0) { titan.stepT = 0.55; AUDIO.sStomp(); G.shake = Math.max(G.shake, 1); }
@@ -1697,6 +1848,7 @@ function bulletHitWorld(b) {
     if (overlap(_box, _ent)) {
       r.active = false;
       addScore(100);
+      spawnFloatText(r.x, r.y - 8, '+100', '#ffffff', false);
       spawnBoom(r.x, r.y, false);
       AUDIO.sExplosion(false);
       return true;
@@ -1934,6 +2086,15 @@ function updateProjectiles(dt) {
     }
     if (p.water && p.y > CONFIG.GROUND_Y + 3) p.active = false;
   }
+
+  // --- Teks melayang (v5): naik melambat lalu memudar ---
+  for (const f of floatTexts) {
+    if (!f.active) continue;
+    f.life -= dt;
+    if (f.life <= 0) { f.active = false; continue; }
+    f.y += f.vy * dt;
+    f.vy *= Math.max(0, 1 - 2.6 * dt);
+  }
 }
 function playerTargetBox() {
   if (player.state === 'slug') { _pbox.x = slug.x + 2; _pbox.y = slug.y - 15; _pbox.w = slug.w - 4; _pbox.h = slug.h + 15; }
@@ -1962,21 +2123,42 @@ function update(dt) {
   updateTitan(dt);
   updateProjectiles(dt);
 
-  // Kamera: look-ahead mengikuti arah hadap + kunci arena bos.
-  // Saat arena terkunci, target kamera DIKLAMP ke rentang arena (bukan
-  // dipaku di tepi kiri): pemain & bos harus selalu terlihat — memaku di
-  // minX membuat 255px arena Monster Laut (termasuk titik muncul 580 dan
-  // pemain sendiri di maxX) berada di luar layar (audit v3).
-  const focusX = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
-  const lookAhead = (player.state === 'slug' ? slug.face : player.face) * 39;
-  let target = clamp(focusX + lookAhead - 225, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
-  if (G.arenaLock) {
-    const camLo = clamp(G.arenaLock.minX - 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
-    const camHi = clamp(G.arenaLock.maxX - CONFIG.VIEW_W + 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
-    target = clamp(target, camLo, camHi);
+  // Panah GO! (v5): muncul berkala saat TIDAK terkunci arena dan
+  // pemain hidup — penanda arah maju ala arcade. Saat tampil, hitung
+  // mundurnya jeda; saat arena bos aktif panah tidak pernah muncul.
+  if (G.goShowT > 0) G.goShowT -= dt;
+  else if (!G.arenaLock && player.state !== 'dead') {
+    G.goT -= dt;
+    if (G.goT <= 0) { G.goT = CONFIG.GO_INTERVAL; G.goShowT = 1.1; }
   }
-  G.camX += (target - G.camX) * Math.min(1, dt * 7);
-  if (Math.abs(target - G.camX) < 0.4) G.camX = target;
+
+  // Kamera (v5): follow TEREDAM dengan DEADZONE kecil + LOOKAHEAD
+  // halus searah hadap/gerak. Kamera tidak lagi menempel kaku ke
+  // pemain: di dalam deadzone kamera diam; lookahead bergeser pelan
+  // mengikuti arah hadap & kecepatan, bukan lompat seketika.
+  // Saat arena terkunci, target DIKLAMP ke rentang arena (warisan
+  // audit v3: memaku di tepi kiri menyembunyikan 255px arena laut —
+  // pemain & bos harus selalu terlihat di keempat sudut).
+  const focusX = player.state === 'slug' ? slug.x + slug.w / 2 : player.x + player.w / 2;
+  const faceNow = player.state === 'slug' ? slug.face : player.face;
+  const velNow = player.state === 'slug' ? slug.vx : player.vx;
+  const lookTarget = player.state === 'dead' ? 0 : faceNow * CONFIG.CAM_LOOK_FACE + velNow * CONFIG.CAM_LOOK_VEL;
+  G.camLook += (lookTarget - G.camLook) * Math.min(1, dt * CONFIG.CAM_LOOK_SMOOTH);
+  let desired = G.camX;
+  if (player.state !== 'dead') {
+    const center = focusX + G.camLook;
+    const curC = G.camX + CONFIG.VIEW_W / 2;
+    if (center > curC + CONFIG.CAM_DEADZONE) desired = center - CONFIG.CAM_DEADZONE - CONFIG.VIEW_W / 2;
+    else if (center < curC - CONFIG.CAM_DEADZONE) desired = center + CONFIG.CAM_DEADZONE - CONFIG.VIEW_W / 2;
+    desired = clamp(desired, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+    if (G.arenaLock) {
+      const camLo = clamp(G.arenaLock.minX - 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+      const camHi = clamp(G.arenaLock.maxX - CONFIG.VIEW_W + 15, 0, CONFIG.LEVEL_W - CONFIG.VIEW_W);
+      desired = clamp(desired, camLo, camHi);
+    }
+  }
+  G.camX += (desired - G.camX) * Math.min(1, dt * CONFIG.CAM_SMOOTH);
+  if (Math.abs(desired - G.camX) < 0.5) G.camX = desired;
 
   if (G.clearT > 0) {
     G.clearT -= dt;
@@ -2162,15 +2344,16 @@ function render() {
     let img, imgF;
     const flash = e.hitT > 0;
     if (e.type === 'rebel') {
-      // Panjang siklus mengikuti array aktif: 2 frame (sprite v3) atau
-      // 8 frame (aset v4) — laju animT tidak berubah.
-      const wi = ((e.animT * 6) | 0) % SPR.rebelWalk.length;
+      // Fase siklus dari JARAK TEMPUH (v5): kaki sinkron tanah pada
+      // kecepatan pendekatan berapa pun. Panjang siklus mengikuti
+      // array aktif: 2 frame (sprite v3) atau 8 frame (aset v4).
+      const wi = Math.floor((e.runDist || 0) / CONFIG.RUN_CYCLE_DIST) % SPR.rebelWalk.length;
       const moving = Math.abs(player.x - e.x) > 81 && e.state !== 'idle';
       img = moving ? SPR.rebelWalk[wi] : SPR.rebelShoot;
       imgF = moving ? SPR.rebelWalkF[wi] : SPR.rebelShootF;
     }
     else if (e.type === 'shield') {
-      const wi = ((e.animT * 6) | 0) % SPR.shieldWalk.length;
+      const wi = Math.floor((e.runDist || 0) / CONFIG.RUN_CYCLE_DIST) % SPR.shieldWalk.length;
       img = e.state === 'flee' ? SPR.shieldBroken : SPR.shieldWalk[wi];
       imgF = e.state === 'flee' ? SPR.shieldBrokenF : SPR.shieldWalkF[wi];
     }
@@ -2185,9 +2368,20 @@ function render() {
   // Di-Cokka
   if (cokka.active && !cokka.dead) {
     const sx = cokka.x - camX;
-    if (sx + 105 > 0 && sx < CONFIG.VIEW_W + 15) {
+    if (sx + 140 > 0 && sx < CONFIG.VIEW_W + 45) {
       const recoil = cokka.recoilT > 0 ? 3 : 0;
-      ctx.drawImage(cokka.hitT > 0 ? SPR.tankFlash : SPR.tank, Math.round(sx + recoil), Math.round(cokka.y));
+      if (SPR.tankAsset && SPR.tankFrames) {
+        // v5: tank ASLI "2D Side scrolling tank" 2D Tyrant (CC0) —
+        // 3 frame animasi rantai roda, jangkar bawah-tengah pada kotak
+        // tabrak (gambar 136x52 pada kotak 96x66: laras menjulur di
+        // depan, roda menapak tanah). Kilatan hit = siluet putih frame
+        // yang sama. Muzzle & logika tembak TIDAK berubah.
+        const fi = (G.time * 5 | 0) % 3;
+        const img = cokka.hitT > 0 ? SPR.tankFramesF[fi] : SPR.tankFrames[fi];
+        ctx.drawImage(img, Math.round(sx + cokka.w / 2 - img.width / 2 + recoil), Math.round(cokka.y + cokka.h - img.height));
+      } else {
+        ctx.drawImage(cokka.hitT > 0 ? SPR.tankFlash : SPR.tank, Math.round(sx + recoil), Math.round(cokka.y));
+      }
       if (cokka.dying <= 0) drawBossBar(sx, cokka.y - 13, 96, cokka.hp, CONFIG.BOSS_HP, '#d84f35');
     }
   }
@@ -2302,7 +2496,10 @@ function render() {
     if (!p.active) continue;
     const sx = p.x - camX;
     if (p.boom >= 0) {
-      const img = SPR.boom[p.boom];
+      // Ledakan besar memakai set frame SPR.boomBig bila aset FX termuat
+      // (assets.js); tanpa aset, kembali ke SPR.boom bawaan — perilaku
+      // fallback tidak berubah.
+      const img = (p.boomBig && SPR.boomBig) ? SPR.boomBig[p.boom] : SPR.boom[p.boom];
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
       const sc = p.size;
       ctx.drawImage(img, Math.round(sx - img.width * sc / 2), Math.round(p.y - img.height * sc / 2), img.width * sc, img.height * sc);
@@ -2314,6 +2511,23 @@ function render() {
     ctx.fillRect(Math.round(sx), Math.round(p.y), p.size, p.size);
   }
   ctx.globalAlpha = 1;
+
+  // Teks skor melayang gaya arcade (v5): "+100", "+15000",
+  // "HEAVY MACHINE GUN!" — naik & memudar di tempat kejadian.
+  ctx.textAlign = 'center';
+  for (const f of floatTexts) {
+    if (!f.active) continue;
+    ctx.globalAlpha = Math.min(1, f.life / (f.maxLife * 0.45));
+    ctx.font = f.big ? 'bold 15px "Courier New", monospace' : 'bold 11px "Courier New", monospace';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#20242a';
+    const fx = Math.round(f.x - camX), fy = Math.round(f.y);
+    ctx.strokeText(f.text, fx, fy);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, fx, fy);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
 
   // Lapis foreground: rumpun tepi bawah bergoyang pelan (2 varian)
   ctx.globalAlpha = 0.55;
@@ -2342,6 +2556,21 @@ function render() {
     ctx.fillStyle = '#f2c230';
     ctx.fillText(G.announceText, 0, 0);
     ctx.restore();
+  }
+
+  // Panah GO! (v5): berkedip di tepi kanan layar, penanda arah maju.
+  if (G.screen === 'play' && G.goShowT > 0 && !G.arenaLock) {
+    if ((G.time * 6 | 0) % 2 === 0) {
+      ctx.font = 'bold 22px "Courier New", monospace';
+      ctx.textAlign = 'right';
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#20242a';
+      const gx = CONFIG.VIEW_W - 14 + Math.sin(G.time * 10) * 2;
+      ctx.strokeText('GO! >>', gx, 128);
+      ctx.fillStyle = '#f2c230';
+      ctx.fillText('GO! >>', gx, 128);
+      ctx.textAlign = 'left';
+    }
   }
 }
 
@@ -2470,7 +2699,11 @@ function drawPlayer(camX) {
     else img = SPR.pJumpByWeapon[w];
   }
   else if (p.vx !== 0) {
-    img = SPR.pRunByWeapon[w][(p.animT * 10) % 8 | 0];
+    // Fase lari dari JARAK TEMPUH (v5): kaki menginjak tanah sinkron
+    // dengan perpindahan — frame berganti tiap RUN_CYCLE_DIST px,
+    // bukan per waktu, jadi tidak ada luncuran pada kecepatan apa pun.
+    const arr = SPR.pRunByWeapon[w];
+    img = arr[Math.floor(p.runDist / CONFIG.RUN_CYCLE_DIST) % arr.length];
   }
   else if (p.fireShowT > 0 || input('fire')) {
     img = p.aim === 'up' ? SPR.pFireUp[w] : (p.aim === 'diag' ? SPR.pFireDiag[w] : SPR.pFireH[w]);
@@ -2481,6 +2714,9 @@ function drawPlayer(camX) {
     img = breath ? (SPR.pIdleGun[w] || SPR.pIdle) : (SPR.pIdleGunB[w] || SPR.pIdleB);
   }
   if (!img) img = SPR.pIdle;
+  // Recoil visual sesaat setelah menembak (v5): seluruh figur bergeser
+  // mundur melawan arah hadap; moncong dihitung dari logika (tetap).
+  if (p.recoilT > 0) _ent.x = sx - p.face * (w === 'shotgun' ? 3 : 2);
   drawEntitySprite(img, _ent, flip);
   // Muzzle flash di ujung senjata saat menembak
   if (p.fireShowT > 0 && p.meleeT <= 0) {
@@ -2496,7 +2732,7 @@ function renderHUD() {
   const inSlug = player.state === 'slug';
   const bombTxt = player.grenadeType === 'fire' ? 'FIRE x' + player.firebombs : 'BOMB x' + player.grenades;
   const key = [G.score, G.lives, player.weapon, player.ammo, bombTxt, G.timer, G.powSaved, G.screen,
-    inSlug, slug.armor, slug.cannon, sea.state, cokka.active, titan.active, G.paused].join('|');
+    inSlug, slug.armor, slug.cannon, sea.state, cokka.active, titan.active, G.paused, highScore].join('|');
   if (key === hudCache) return;
   hudCache = key;
   hudCtx.clearRect(0, 0, CONFIG.VIEW_W, CONFIG.VIEW_H);
@@ -2509,6 +2745,12 @@ function renderHUD() {
   hudCtx.fillText('SKOR', 10, 16);
   hudCtx.fillStyle = '#f2c230';
   hudCtx.fillText(String(G.score).padStart(6, '0'), 52, 16);
+  // High score (v5): kecil di kanan skor — menampilkan yang terbesar
+  // antara rekor tersimpan & skor berjalan (ala arcade).
+  hudCtx.font = 'bold 10px "Courier New", monospace';
+  hudCtx.fillStyle = '#8f9296';
+  hudCtx.fillText('HI ' + String(Math.max(G.score, highScore)).padStart(6, '0'), 150, 16);
+  hudCtx.font = 'bold 13px "Courier New", monospace';
   // Nyawa: ikon kepala + jumlah sisa
   const livesLeft = Math.max(0, G.lives - 1);
   hudCtx.drawImage(SPR.headIcon, 10, 22, 15, 15);
@@ -2591,6 +2833,32 @@ requestAnimationFrame(frame);
 // Terapkan pengaturan audio sejak awal (mesin audio dibuat saat gestur pertama)
 AUDIO.musicOn = SETTINGS.music;
 AUDIO.sfxOn = SETTINGS.sfx;
+// Tampilkan rekor tersimpan di layar judul sejak boot (v5)
+syncTitleHi();
+
+/* ================= Musik lobi (v5) ==================================
+   Browser melarang audio autoplay sebelum gestur pengguna, jadi musik
+   layar judul dimulai pada interaksi PERTAMA (sentuh/klik/tombol) dan
+   hanya saat layar judul aktif. Loop yang sama dengan musik gameplay;
+   startMusic() idempotent (penjaga musicTimer di audio.js), sehingga
+   menekan MULAI tidak mengulang atau menumpuk musik — transisi lobi
+   ke gameplay mulus. Saklar Musik (SETTINGS.music -> AUDIO.musicOn)
+   dan tombol bisu (AUDIO.muted) diperiksa per nada di tick musik,
+   jadi keduanya tetap dihormati di lobi maupun di permainan. */
+function maybeLobbyMusic() {
+  // Audit v5: TANPA latch satu-kali. Penjaga state di sini hanyalah
+  // layar judul + startMusic() yang idempoten — karena itu musik lobi
+  // juga menyala kembali pada gestur pertama setelah pemain kembali
+  // ke judul (KE JUDUL memanggil stopMusic). Latch lama membuat musik
+  // lobi mati permanen setelah kunjungan judul pertama.
+  if (G.screen !== 'title') return;
+  AUDIO.init();
+  AUDIO.setMusicOn(SETTINGS.music);
+  AUDIO.setSfxOn(SETTINGS.sfx);
+  if (SETTINGS.music && !AUDIO.muted) AUDIO.startMusic();
+}
+window.addEventListener('pointerdown', maybeLobbyMusic);
+window.addEventListener('keydown', maybeLobbyMusic);
 
 /* ================= Tombol UI ======================================== */
 function toggleMute() {
@@ -2640,6 +2908,12 @@ function bindSetting(id, key2, apply) {
     if (key2 === 'vibrate' && el.checked) vibrate(30);
   });
 }
-bindSetting('optMusic', 'music', (on) => { AUDIO.init(); AUDIO.setMusicOn(on); });
+bindSetting('optMusic', 'music', (on) => {
+  AUDIO.init();
+  AUDIO.setMusicOn(on);
+  // Menyalakan Musik dari Pengaturan saat masih di lobi: mulai musik
+  // lobi saat itu juga (gestur perubahan saklar adalah gestur sah).
+  if (on && G.screen === 'title' && !AUDIO.muted) AUDIO.startMusic();
+});
 bindSetting('optSfx', 'sfx', (on) => { AUDIO.init(); AUDIO.setSfxOn(on); });
 bindSetting('optVibrate', 'vibrate', null);

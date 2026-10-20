@@ -493,3 +493,141 @@ Format entri: `## [tanggal] Judul singkat` lalu **Kesalahan**, **Penyebab**, **P
 **Perbaikan:** Cabut bersih, bukan dilembutkan lagi. Fungsi `drawCloudStrip()` DIHAPUS dari sprites.js beserta penugasan `S.cloudStrip = drawCloudStrip()`; dari `render()` di game.js DIHAPUS variabel `cloudOff` + kedua `drawImage(SPR.cloudStrip, …)` (komentar nomor lapis disesuaikan). Grep seluruh repo: nol rujukan `cloudStrip`/`drawCloudStrip`/`cloudOff`/`puff(` tersisa — tidak ada fungsi/kunci yatim. Langit akhir = gradasi senja + bintang + halo matahari redup (`drawBgSky`) + lapisan gambar ansimuz (bgFar/bgMid). Mekanik, aset, HUD, teks, dan data level tidak disentuh. Bukti: `node --check` semua berkas lolos; suite audit v4 tetap **66/66** dan regresi v3 tetap **143 lulus + 1 gagal pola lama** (asersi E2/E3 di `t4-audit.js` dan daftar kunci strip di `t3-sprites.js` diperbarui 1:1 dari menegaskan pelembutan menjadi menegaskan KETIADAAN strip — keputusan audit v4 "dilembutkan, bukan dihapus" resmi dibalik atas bukti layar live); di Chromium headless `SPR.cloudStrip === undefined` saat aset teraplikasi; analisis piksel atas komposit latar persis seperti `render()` menggambarnya (bgSky+bgFar+bgMid, 5 fase camX 0/777/1500/2900/4300, wilayah x 0–330, y 10–108): run horizontal terang-lokal (kelebihan luminansi >10 terhadap rata-rata baris y±4) terpanjang hanya **2px** (derau bintang) — sedangkan alas puff lama menurut konstruksinya selebar 90–150px pada kelebihan ≈+16–22, jauh di atas ambang deteksi ≥50px. Pratinjau `previews/preview-{title,game,titan}.png` digenerate ulang dari Chromium headless; cek browser pendampingnya (avatar 84×84 statis, tombol MULAI terklik, teks POW bebas tombol) tetap lulus.
 
 **Pelajaran untuk agen lain:** Elemen dekoratif langit hasil gambar-kode dua kali ditolak mata manusia meski lulus uji angka — dekorasi langit serahkan ke gambar aset, bukan primitif canvas. Dan bila bentuk dasarnya yang ditolak, cabut elemennya; pelembutan parameter hanya menunda penolakan yang sama ke rilis berikutnya.
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Bug NaN dari field knockback yang tidak diinisialisasi
+
+**Kesalahan:** Saat pisau & knockback ditambahkan, objek musuh rakitan tangan di uji (dan jalur mayat di `updateEnemies`) membaca `e.kbVx`/`e.runDist` yang belum tentu ada: cabang mayat menghitung `e.x += undefined * dt` → posisi menjadi `NaN` dan meracuni render & tabrakan. Terbukti oleh uji chaser era v3 yang mulai gagal `vy=0`.
+
+**Penyebab:** Field baru (`kbT/kbVx/runDist/recoilT/camLook`) ditambahkan ke mesin tanpa daftar periksa inisialisasi di semua jalur pembuatan objek (buildLevel menutupi musuh level, tetapi objek rakitan uji & jalur tepi tidak).
+
+**Perbaikan:** Penjaga defensif di titik pakai (`if (e.kbVx)`, `(e.runDist || 0)` di update & draw) + inisialisasi lengkap di `buildLevel()` dan `startGame()`. Setelah perbaikan, seluruh regresi pulih.
+
+**Pelajaran untuk agen lain:** Setiap menambah field state baru, grep semua tempat objek sejenis dibuat/di-reset dan semua tempat field dibaca; objek rakitan uji WAJIB memakai objek dari `buildLevel()`, bukan literal setengah jadi. Uji yang merakit objek parsial akan menghasilkan kegagalan semu ATAU menyembunyikan bug NaN seperti ini.
+
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Tiga kesalahan staging uji oleh pembangun sendiri (semu terdeteksi, diperbaiki di berkas uji)
+
+1. **Pemain di-staging di x=800**, ternyata dalam jangkauan pisau peti x=820 — 5 uji aim/amunisi/recoil gagal semu (pisau otomatis memotong tembakan). Dipindah ke x=700. *Pelajaran: sebelum staging uji tembak, periksa radius pisau `MELEE_RANGE` terhadap peti/musuh terdekat.*
+2. **Uji deadzone kamera ditulis dari tepi zona mati** — kamera memang selalu di tepi setelah menetap, jadi asersi "tidak bergerak" selalu benar palsu. Ditulis ulang dari interior deadzone. *Pelajaran: uji deadzone harus berangkat dari posisi interior, bukan dari keadaan tunak.*
+3. **Regex struktural CSS mengenai komentar**, bukan aturan — pola diperketat ke `#stage canvas\s*\{`. *Pelajaran warisan v4 yang kambuh: pola uji struktural harus menargetkan sintaks aturan, bukan teks bebas.*
+
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Keputusan tank CC0: Di-Cokka YA, SV-001 TIDAK
+
+"2D Side scrolling tank" oleh 2D Tyrant (OpenGameArt, CC0 terkonfirmasi di halaman) dievaluasi dari sheet sumber 600×200 (3 frame; antar-frame hanya berbeda animasi roda/rantai). Diproses menjadi `assets/tank.png` 408×52 (crop per frame + mirror ke kiri). **Cocok untuk Di-Cokka** (tank musuh bergerak maju-mundur, turet diam memang karakternya). **Tidak untuk SV-001**: turet aset menyatu & diam — SV-001 wajib mengekspresikan turet putar 8-arah — dan proporsi badannya tidak pas ke kotak Slug 60×51. Loader tank dibuat TERPISAH (`window.PAM_TANK`) dan hanya menerapkan bila set utama sukses penuh, agar kegagalannya tidak mencemari fallback satu-gaya v4. SV-001 tetap gambar-kode dengan alasan teknis ini, bukan karena aset tidak dicari.
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Kegagalan suite lama yang DISENGAJA (pengoreksi: rebase, jangan "perbaiki" kode)
+
+Perluasan level 4600→6400px & perubahan v5 lain membuat angka lama kedaluwarsa. Suite era v3 (`main3`/rangkaian `t3-*`): **130 lulus, 14 gagal — semuanya kategori ini**:
+
+- 11× staging Titan geometri lama (uji menaruh Titan di x=4400 / pemicu 4150; kini pemicu 5750, Titan x=6200, arena {5880,6380}, klamp (6050,6296)). Rebase: geser +1800.
+- 1× "POW total tepat 7" → kini **9** (POW_DEFS +{4550},{5580}).
+- 1× daftar kunci `SPR` dari sprites.js → kini assets.js juga mendefinisikan `tankAsset/tankFrames/tankFramesF` (dan `boomBig` bila FX termuat) — kelas pola lama yang sama dengan `titanAsset` di v4.
+- `t4-v4` 1× A12 "judul & tagline v4" → judul kini v5 (48/49).
+
+Uji pembangun v5 (`t5-v5.js`) sudah men-staging ulang seluruh mekanik Titan pada geometri baru dan lulus 86/86 — mekaniknya sendiri tidak berubah.
+
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Pentasan pratinjau bos menabrak sistem arena game sendiri
+
+**Kesalahan:** Tangkapan `preview-action/cokka/titan` pertama menampilkan adegan yang tertukar: action & titan sama-sama menampilkan pengumuman "Di-Cokka!" + tank, dan Titan tidak terlihat sama sekali. Penyebabnya staging skrip foto: pemain di-teleport melewati pemicu Di-Cokka yang masih dorman → `updateCokka` MENGAKTIFKANNYA (perilaku game yang benar), memasang arenaLock-nya, dan menyeret kamera/pemain ke arena Di-Cokka. Pada staging titan, `cokka.active = false` justru menghidupkannya lagi di frame berikutnya karena pemain berada melewati pemicu.
+
+**Perbaikan:** Semua staging bos kini menandai bos sebelumnya **selesai** (`active = true, dead = true`) — bukan dimatikan — dan mengatur `arenaLock` eksplisit untuk Titan. Ketiga tangkapan diambil ulang & diperiksa: action = zona 5 + popup POW, cokka = menara 2 + tank CC0 utuh, titan = mech memenuhi arena.
+
+**Pelajaran untuk agen lain:** Teleport staging BUKAN jalan pintas netral: pemicu bos berbasis posisi akan selalu menafsirkan teleport sebagai kedatangan sah. Tandai bos yang dilewati sebagai selesai, atau staging dari awal level. Ini pengulangan pelajaran audit v3 ("teleport uji bertabrakan dengan sistem arena") pada skrip pratinjau — berlaku juga di sana.
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Perburuan aset menuju target 17 berkas fungsional: hasil jujur 8, dan daftar penolakan
+
+Pemilik menargetkan ≥17 berkas aset gambar FUNGSIONAL (masing-masing harus bisa dibuktikan dirender saat bermain) dan menegaskan angka jujur di bawah target lebih diterima daripada angka hasil pajangan/lisensi abu-abu. **Hasil ronde ini: 8 berkas fungsional** — 6 warisan v4 (player, enemies, titan, bg-far, bg-mid) + tank (v5 awal) + 2 baru ronde ini:
+
+- **`assets/explosion.png`** — "Explosion Set 2" oleh Master484, **CC0** (tertulis di halaman OGA dan tercetak di kaki sheet: "LICENSE: PUBLIC DOMAIN / CC0"). Siluet jamur api di-remap gradasi api berlapis via pita erosi masker, latar hitam → alfa; 4 frame 60×60 → `SPR.boom` (semua ledakan kecil). Bukti render: uji penanda + `preview-boom.png`.
+- **`assets/explosion-big.png`** — sumber sama, baris palet lebih panas + pijar tepi → `SPR.boomBig`, dipilih render dari flag partikel `boomBig` (ledakan bos/Slug/tong rantai). Bukti: uji kanvas penanda 61px membuktikan cabang render-nya.
+
+Keduanya dimuat loader terpisah `window.PAM_FX` dengan semantik tank: hanya bila set utama applied penuh; gagal satu berkas hanya menggugurkan perannya.
+
+**Kandidat yang DIEVALUASI & DITOLAK (dengan alasan — jangan buru ulang membabi buta):**
+
+1. **Open Gunner Expansion Pack 1 & 2 (Master484)** — isinya ideal (Forest Tileset, "good woods" tileset, turret musuh baru, bos cyborg). DITOLAK SEMENTARA: halaman OGA kedua paket tidak mengekstrak blok File(s)/License lewat penarik teks yang tersedia (hanya teks badan + atribusi "credit Master484"), dan nama berkas unduhan tidak bisa ditebak (4 kandidat nama → 404 semua). Tanpa verifikasi lisensi kata-per-kata & jalur unduh pasti, aturan proyek melarang memakainya. Jalan lanjut yang sah: buka halaman lewat browser live/dashboard, catat nama berkas persisnya, unduh, verifikasi footer lisensi di sheet (pola Master484 konsisten CC-BY 3.0).
+2. **"Country Side Platform Tiles" (OGA)** — halamannya hanya mengekstrak komentar; lisensi & berkas tidak terverifikasi → DITOLAK (lisensi tidak jelas = tolak).
+3. **"Animated Ocean Water Tile" (OGA)** — sama: lisensi tidak terverifikasi lewat jalur tersedia → DITOLAK.
+4. **"Explosion Set 1" (Master484, CC0 terverifikasi)** — diunduh & diperiksa; gaya cincin/busa menyebar kurang cocok sebagai bola api utama dibanding Set 2 → TIDAK DIPAKAI atas dasar kecocokan, bukan lisensi.
+5. **"explosion" oleh johndekale (CC0 terverifikasi)** — diunduh (59 frame GIF 256×256); gaya lukis (bukan pixel) bentrok dengan gaya pixel game pada ukuran render → TIDAK DIPAKAI atas dasar kecocokan gaya.
+6. **POW/tawanan & Shield Soldier** — pencarian OGA ("prisoner/hostage/captive", termasuk entri koleksi "Captive Tomi") tidak menghasilkan sprite tawanan/perisai tampak-samping yang cocok gaya & terverifikasi lisensinya (melanjutkan temuan v4). Tetap gambar-kode; dicatat sebagai utang aset, bukan disembunyikan.
+
+**Pelajaran untuk agen lain:** Ekstraksi teks OGA tidak seragam — halaman pasca-2013 umumnya memuat blok License(s)+File(s), halaman lama sering tidak. Bila kedua blok itu tidak terbaca, kandidat dianggap TIDAK terverifikasi (bukan "mungkin CC0"). Dan target kuantitatif tidak pernah mengalahkan aturan lisensi: laporkan angka jujur + daftar penolakan ini.
+
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — UI/UX: target sentuh kecil & teks pengumuman hantu
+
+- **`.small-btn` hanya 42px** — di bawah target sentuh 44px yang dituntut standar UI/UX pemilik. Dinaikkan ke `min-height: 44px`. Tombol lain terukur aman: pojok 44×44, sentuh A/B/C 58–72px, D-pad 58px; jeda antar A/B/C 10px (pojok 6px & grid D-pad 4px dicatat sebagai catatan minor, bukan pelanggaran ukuran target).
+- **Teks pengumuman "Mission Start!" tampak menghantui** di balik layar JEDA & SELESAI pada tangkapan pratinjau. Setelah ditelusuri ini artefak pentasan (endScreen/setPaused dipanggil tepat setelah startGame yang mengumumkan) — di permainan nyata pengumuman 1,4 detik sudah lama selesai sebelum jeda/akhir. Bukan bug; tetapi pengoreksi yang men-staging dengan cara sama akan melihat hal yang sama — staging layar akhir/jeda sebaiknya mendahului pengumuman dibersihkan (`G.announceT = 0`) agar tangkapan bersih.
+- Tata letak layar judul dirapikan (`gap` 8→6px, line-height kotak kontrol 1.6→1.5) agar baris kredit terbawah tidak lagi terpotong di viewport 960×540; terverifikasi di pratinjau judul terbaru (logo berkas + semua baris kredit terbaca).
+---
+
+## [2026-10-20] v5 (PEMBANGUN) — Musik lobi, wajah web, dan jebakan stub AudioContext di harness
+
+**Musik lobi:** Browser melarang audio sebelum gestur — musik judul kini dimulai listener `pointerdown`/`keydown` pertama saat `G.screen === 'title'` (`maybeLobbyMusic`), dan dari saklar Musik di Pengaturan bila dinyalakan saat masih di lobi. Transisi ke gameplay mulus BUKAN karena kode khusus: `AUDIO.startMusic()` memang idempotent (penjaga `musicTimer`), jadi panggilan kedua dari `startGame()` adalah no-op. Pelajaran: sebelum menulis logika transisi, periksa idempotensi API yang sudah ada.
+
+**Jebakan uji:** Uji musik lobi pertama GAGAL bukan karena kode game, melainkan harness `t4-harness` tidak menyediakan stub `AudioContext` sama sekali — `AUDIO.init()` selalu pulang diam-diam di semua uji stub selama ini (musik tidak pernah benar-benar "berbunyi" di suite mana pun). Uji diperbaiki dengan menyuntikkan AudioContext tiruan minimal dari sisi uji. **Pelajaran untuk agen lain:** Asersi tentang audio di suite stub hanya bermakna bila konteks audionya disuntikkan; tanpa itu, "musik jalan" tidak teruji sama sekali — dan jangan buru-buru menyalahkan kode game atas kegagalan harness.
+
+**Wajah web & sumber tunggal logo:** Pemilik menyederhanakan: SEMUA ikon diturunkan dari `logo.png` yang sama. Ikon versi pertama ronde ini memakai potongan kepala hero Open Gunner (gambar berbeda dari logo) — DIGANTI: icon-512/192/apple-touch = wordmark logo.png utuh di atas persegi gradasi senja; favicon = varian sederhana huruf "P" yang dipotong dari logo.png sendiri (wordmark utuh tidak terbaca pada 16px — diverifikasi dengan render 16px yang diperbesar: siluet "P" kuning tegas terbaca). `og:image`/`twitter:image` juga menunjuk logo.png. Logo sendiri adalah karya proyek (huruf Liberation Sans Bold, SIL OFL) yang digambar dengan PIL: percobaan pertama gagal total (masker teks tidak diterapkan ke gradasi sehingga logo menjadi balok oranye buram) — tertangkap karena hasil kompositnya DILIHAT, bukan hanya dipercaya dari kode. Pelajaran yang sama dengan gerbang visual: berkas gambar hasil generator wajib dibuka dan diperiksa.
+
+**Kunci ukuran gambar judul:** `#titleLogo` dikunci di CSS (`height: 54px; width: auto; flex: none`, selector diperkuat `#stage #titleLogo`) — pelajaran bug avatar raksasa v4 diterapkan ke SEMUA gambar layar judul, bukan hanya canvas.
+
+---
+
+## [2026-10-20] AUDIT v5 — BUG: pemicu Titan di LUAR arena → pemain & Slug teleport ±130px (DIPERBAIKI)
+
+- **Kesalahan:** `CONFIG.TITAN_TRIGGER_X = 5750`, sedangkan arena Titan adalah {5880, 6380} dan klamp pemain saat terkunci adalah [5882, 6358]. Pemain yang BERJALAN normal melewati x=5750 mengaktifkan kunci arena, dan pada langkah berikutnya klamp menyentak posisinya **+130,6px dalam satu frame** (terukur di uji progresi dinamis agen pengoreksi: jalan kaki dari x=5600, lompatan maksimum satu langkah 130,6px sebelum perbaikan). Pemain melompati penjaga terakhir di x=5800 tanpa bertarung. Pola ini menyimpang dari dua bos lain (pemicu laut 340 di dalam {40,760}; pemicu Di-Cokka 3400 di dalam {3350,3850}).
+- **Penyebab lolos dari pembangun:** staging uji pembangun meneleport pemain langsung ke dalam arena (x=6000+) sehingga jalur berjalan tidak pernah dilalui — pelajaran staging v3 yang sama persis terulang. Aseri statis pembangun bahkan mengunci angka yang salah (`TITAN_TRIGGER_X === 5750` diasertakan sebagai kebenaran).
+- **Perbaikan (dua tahap, keduanya terukur):** 5750 → 5890 menutup kasus jalan kaki, TETAPI uji kendaraan pengoreksi menunjukkan Slug masih tersentak **+10,9px**: pemicu membaca `player.x` yang saat berkendara bernilai `slug.x + 20`, sedangkan klamp arena bekerja pada `slug.x` (min 5882). Nilai final **5910** — di dalam arena dan di atas tepi klamp kendaraan (5882 + 20 + margin). Setelah perbaikan: lompatan maksimum pemain 2,6px/langkah (kecepatan jalan normal), Slug ≤ 6px/langkah, arena terkunci pada player.x=5912.
+- **Pelajaran:** (1) Pemicu bos wajib diuji lewat PROGRESI BERJALAN dari sebelum pemicu, bukan teleport ke dalam arena. (2) Saat membandingkan pemicu terhadap klamp, periksa SEMUA koordinat yang diklamp arena — pemain jalan dan kendaraan punya offset berbeda. (3) Jangan pernah mengasertakan angka konfigurasi sebagai "kebenaran" di uji tanpa memeriksa konsistensinya terhadap geometri yang dikunci angka itu.
+
+---
+
+## [2026-10-20] AUDIT v5 — BUG: musik lobi mati permanen setelah KE JUDUL (DIPERBAIKI)
+
+- **Kesalahan:** `maybeLobbyMusic()` dijaga latch satu-kali `lobbyMusicTried`. Skenario nyata: pemain membuka game (musik lobi jalan) → main → KE JUDUL (handler memanggil `AUDIO.stopMusic()`) → gestur berikutnya di judul TIDAK menyalakan musik lagi, selamanya, sampai reload. Ini bertentangan dengan perilaku yang dijanjikan README (titik rawan musik: "musik lobi baru mulai pada gestur berikutnya").
+- **Perbaikan:** latch dihapus. Penjaga yang benar cukup dua: hanya di layar `title`, dan `AUDIO.startMusic()` yang memang idempoten (penjaga `musicTimer` di audio.js) — persis pelajaran pembangun sendiri di entri musik lobi, diterapkan konsisten. Uji siklus penuh pengoreksi: gestur→musik jalan; MULAI→timer yang sama (tidak dobel); KE JUDUL→berhenti; gestur→jalan lagi; saklar Musik mati & keadaan bisu tetap menahan musik.
+- **Pelajaran:** Latch satu-kali untuk efek yang harus bisa menyala berulang adalah jebakan; bedakan "sudah pernah dicoba" dari "sedang berjalan". State berjalan (`musicTimer`) adalah sumber kebenaran yang tepat.
+
+---
+
+## [2026-10-20] AUDIT v5 — BUG: teks pengumuman membeku PERMANEN di layar akhir (DIPERBAIKI) + verifikasi klaim "artefak pentasan"
+
+- **Verifikasi klaim pembangun:** Benar bahwa "Mission Start!" di tangkapan pratinjau JEDA/SELESAI berasal dari pentasan (setPaused/endScreen dipanggil tepat setelah startGame) — pengoreksi melihat sendiri hantunya di `previews/preview-pause.png` & `preview-end.png`. Untuk JEDA ini juga bukan bug: pengumuman memang sedang tampil, membeku selama jeda, dan berlanjut setelah LANJUTKAN.
+- **Tetapi ada jalur nyata yang lolos dari penjelasan itu:** bila pemain mati di NYAWA TERAKHIR dalam sisa jendela pengumuman bos (pengumuman 1,4 dtk; animasi mati 1,15 dtk — jadi kematian ≤ ±0,25 dtk setelah pengumuman mulai, mis. rudal yang sudah meluncur), `endScreen(false)` terpanggil saat `announceT` masih > 0. Di luar layar `play`, `update()` berhenti total sehingga `announceT` TIDAK PERNAH berkurang — teks bos membeku permanen di balik panel GAME OVER.
+- **Perbaikan:** `endScreen()` kini membersihkan `G.announceT`/`G.announceText` — aturan transisi proyek sendiri ("setiap transisi state membersihkan state sesaat") yang sudah dipatuhi handler KE JUDUL tetapi terlewat di sini.
+- **Pelajaran:** "Artefak pentasan" adalah penjelasan yang harus DIBUKTIKAN per layar, bukan diterima sebagai kategori umum — jalur waktu (siapa mengurangi timer ini, dan apakah ia masih berjalan setelah transisi) menentukan apakah hantu itu berumur 1,4 detik atau selamanya.
+
+---
+
+## [2026-10-20] AUDIT v5 — Kepatuhan standar ARSITEKTUR: angka sihir dipindah ke CONFIG, dokumentasi loader dilengkapi
+
+- **Angka sihir di logika baru v5 (klaim §3 ARSITEKTUR belum penuh):** faktor kecepatan lookahead kamera `velNow * 0.16`, knockback pisau `185`/`0.16`, knockback peluru `95`/`0.1`, dan hit-stop ledakan `0.03` (warisan v3 di `explodeAt`) tertulis literal. Dipindah ke CONFIG sebagai `CAM_LOOK_VEL`, `MELEE_KB_VX`, `MELEE_KB_T`, `KB_VX`, `KB_T`, `HITSTOP_EXPLODE` — nilai identik, perilaku tidak berubah (seluruh suite tetap hijau setelah pemindahan).
+- **Dokumentasi tidak akurat:** `docs/ARSITEKTUR.md` tidak menyebut loader `PAM_FX` sama sekali (0 kemunculan) padahal kode memiliki TIGA loader terpisah. Diagram §2.4 dan tabel modul dilengkapi: PAM_FX (explosion + explosion-big, independen satu sama lain di bawah syarat set utama applied).
+- **Catatan desain (bukan bug, dibiarkan sadar):** pisau yang TERTAHAN perisai Shield Soldier tetap memberi knockback `kbVx=185` ke prajuritnya, sedangkan peluru yang tertahan tidak memberi knockback sama sekali. Asimetri terukur di uji pengoreksi; dinilai masuk akal sebagai rasa fisik pisau vs proyektil dan tidak diubah — dicatat di sini agar keputusan ini disadari, bukan kebetulan yang tak terdokumentasi.
+
+---
+
+## [2026-10-20] AUDIT v5 — Putusan audit independen & rebase suite lama
+
+**Metode:** suite independen baru `~/workspace/audit-scratch/t5-audit.js` (87 uji) ditulis dari nol di atas harness audit v4 — termasuk suntikan stub AudioContext (tanpa itu uji musik tidak bermakna) dan uji progresi berjalan sungguhan; kedelapan pratinjau diperiksa dengan mata; lisensi dua aset baru diverifikasi ulang langsung dari halaman OpenGameArt sumbernya (keduanya CC0, sesuai CREDITS.md).
+
+**Putusan per klaim pembangun:** (1) Kamera — TERBUKTI: invariant kedua arena saat menetap, ayunan berbalik hanya 2,8px, kamera beku saat mati; sisa gerak pemain diam < 0,01px (asimtot damping, tak terlihat). (2) Siklus lari — TERBUKTI: `runDist` == perpindahan nyata pada 60 fps DAN 30 fps, membeku di udara. (3) Hit-stop — TERBUKTI lewat loop `frame()` asli: input ter-buffer dieksekusi, timer beku selama hit-stop, tanpa fast-forward sesudahnya. (4) Pisau & knockback — TERBUKTI: ketiga bos −3, pita core fallback ×2 utuh, sapuan NaN ke 33 musuh buildLevel bersih (perbaikan field `kbT/kbVx` pembangun tuntas di semua jalur spawn). (5) High score — TERBUKTI penuh: hanya naik, tampil di judul/HUD/akhir, tahan reload, tahan nilai rusak & skor 0. (6) Dunia 6400/9 POW — TERBUKTI: invariant data + freePow semua POW tanpa kaki berpindah (regresi teleport v2 tidak kembali). (7) Aset — TERBUKTI **8 berkas fungsional**, angka jujur pembangun akurat: per berkas ada jejak render (frame tank 136px & ledakan 60px tertangkap di render; cabang fallback 96px utuh), lisensi terverifikasi, semantik loader terpisah persis seperti didokumentasikan (satu berkas FX gagal = hanya perannya yang gugur; set utama gagal = semua ikut gugur, satu gaya utuh). Tidak ada berkas pajangan di antara yang diklaim. (8) Wajah web — TERBUKTI struktural (metadata/ikon/manifest/CSS) + favicon huruf "P" terbaca pada 16px; SATU cacat perilaku ditemukan & diperbaiki (musik lobi, lihat entri di atas). (9) UI/UX — TERBUKTI dari 8 pratinjau: HUD tak bertabrakan, kredit judul utuh terbaca, target sentuh ≥44px termasuk `.small-btn`. (10) Suite lama — TERBUKTI pernyataan pembangun: seluruh kegagalan baseline adalah perubahan disengaja (dirinci di bawah); nol bug kode bersembunyi di antaranya. (11) Standar ARSITEKTUR — TERBUKTI setelah dua perbaikan kepatuhan di entri sebelumnya.
+
+**Rebase suite (berkas uji diubah, BUKAN kode):**
+- `t3-mech.js`/`t3-boss.js`: staging Titan digeser +1800 mengikuti geometri 6400 (4200→6000, 4279→6079, 4280→6080, 4378→6178, 4496→6296, camX 3950→5750, laser dari 4350→6150); koordinat Y laser TIDAK berubah (titan.y tetap 82, pita fallback 139..157).
+- `t3-boss.js`: "POW total tepat 7" → 9.
+- `t3-sprites.js`: rujukan `SPR.*` tak terdefinisi kini diizinkan HANYA untuk himpunan kunci milik assets.js yang eksak (`titanAsset, titanMech, titanMechF, tankAsset, tankFrames, tankFramesF, boomBig` — ketiadaannya adalah sinyal fallback by design) dan himpunan itu diasertakan eksak agar kunci yatim baru tetap tertangkap.
+- `t4-v4.js` A12: string judul v4 → v5.
+- `t5-v5.js` (suite pembangun): asersi pemicu 5750 → 5910 dan staging arena 5800 → 5950 mengikuti perbaikan bug pemicu (entri pertama di atas).
+
+**Hasil akhir semua suite:** audit independen **87/87**, pembangun **86/86** + **42/42**, warisan **66/66** + **49/49** + **145/145** + **29/29**, pemeriksaan langit v4.1 lolos — total 504 asersi hijau. Sisa risiko jujur: belum ada playtest HP fisik ronde ini (rasa kamera/hit-stop & keterbacaan favicon di tab browser nyata hanya bisa disahkan di perangkat), dan pentasan pratinjau cokka tidak menampilkan pemain di dalam bingkai (kosmetik pentasan, bukan cacat game).

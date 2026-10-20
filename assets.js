@@ -1,8 +1,11 @@
 /* =====================================================================
-   PaM-ONG v4 — assets.js
+   PaM-ONG — assets.js (v4; v5 menambah tank Di-Cokka CC0 di bagian akhir)
    Pemuatan aset gambar ASLI berlisensi bebas (lihat assets/CREDITS.md):
    - Karakter: "Open Gunner" oleh Master484 (CC-BY 3.0, OpenGameArt).
    - Latar pegunungan/hutan: "Mountain at Dusk" oleh ansimuz (CC0).
+   - Tank Di-Cokka (v5): "2D Side scrolling tank" oleh 2D Tyrant (CC0).
+   - Ledakan (v5): "Explosion Set 2" oleh Master484 (CC0/Public Domain)
+     — loader terpisah PAM_FX, lihat bagian akhir berkas.
    Aset menimpa entri SPR yang bersesuaian SETELAH semua berkas termuat.
    FALLBACK WAJIB: bila berkas apa pun gagal dimuat (404, offline, file://
    tanpa server, dsb.) game berjalan PERSIS seperti v3 dengan sprite
@@ -188,4 +191,85 @@
     img.onerror = () => { state.failed++; settle(); };
     img.src = f.src;
   }
+
+  /* ---- v5: Tank Di-Cokka — "2D Side scrolling tank" oleh 2D Tyrant
+     (CC0, OpenGameArt). Strip 3 frame animasi rantai roda, sudah
+     di-mirror menghadap kiri & dipotong rapat (408x52) di assets/.
+     Dimuat TERPISAH dari set utama di atas dengan SEMANTIK KETAT:
+     hanya diterapkan bila set utama berhasil teraplikasi PENUH
+     (state.applied). Bila set utama gagal (fallback v3) atau berkas
+     tank ini gagal, Di-Cokka tetap memakai sprite gambar-kode —
+     fallback satu-gaya-penuh v4 tidak pernah dicemari tank ini.
+     SV-001 SENGAJA tidak memakai aset ini: turetnya menyatu & diam,
+     sedangkan turet SV-001 wajib berputar 8 arah mengikuti pemain. */
+  const tankState = { loaded: false, failed: false, applied: false };
+  window.PAM_TANK = tankState;
+  function tryApplyTank(img) {
+    if (!state.applied || typeof SPR === 'undefined' || !SPR.tank) return false;
+    const frames = [], framesF = [];
+    for (let i = 0; i < 3; i++) {
+      const f = slice(img, [i * 136, 0, 136, 52]);
+      frames.push(f);
+      framesF.push(whiteSilhouette(f));
+    }
+    SPR.tankFrames = frames;
+    SPR.tankFramesF = framesF;
+    SPR.tankAsset = true;
+    tankState.applied = true;
+    return true;
+  }
+  const tankImg = new Image();
+  tankImg.onload = () => {
+    tankState.loaded = true;
+    // Set utama mungkin belum selesai dimuat; tunggu keputusannya.
+    let tries = 0;
+    (function waitMain() {
+      if (tryApplyTank(tankImg)) return;
+      const settledAll = state.loaded + state.failed >= state.total;
+      if (settledAll && state.failed > 0) return; // set utama gagal: fallback penuh, tank ikut gugur
+      if (++tries < 60) setTimeout(waitMain, 50);
+    })();
+  };
+  tankImg.onerror = () => { tankState.failed = true; };
+  tankImg.src = 'assets/tank.png';
+
+  /* ---- v5: Ledakan — "Explosion Set 2" oleh Master484 (CC0 /
+     Public Domain, OpenGameArt). Dua berkas peran berbeda:
+     - explosion.png     → SPR.boom     (ledakan biasa: tong kecil,
+       granat, roket, musuh meledak)
+     - explosion-big.png → SPR.boomBig  (ledakan BESAR: kematian bos,
+       Slug hancur, tong berantai — palet lebih panas + pijar tepi;
+       dipilih render() dari flag p.boomBig di partikel)
+     Frame hasil olahan: siluet jamur api sheet di-remap gradasi api
+     berlapis (tepi merah gelap → oranye → kuning → inti pucat) dengan
+     latar hitam diubah menjadi alfa; 4 frame 60x60 per strip.
+     Semantik sama ketatnya dengan tank: TERPISAH dari set utama,
+     hanya diterapkan bila set utama applied penuh; kegagalan salah
+     satu berkas FX hanya menggugurkan peran FX itu sendiri —
+     SPR.boom bawaan gambar-kode tetap menjadi fallback-nya. */
+  const fxState = { boomApplied: false, bigApplied: false, boomFailed: false, bigFailed: false };
+  window.PAM_FX = fxState;
+  function loadFx(src, applyFn, okKey, failKey) {
+    const img = new Image();
+    img.onload = () => {
+      let tries = 0;
+      (function waitMain() {
+        if (state.applied && typeof SPR !== 'undefined' && SPR.boom) {
+          if (applyFn(img)) { fxState[okKey] = true; return; }
+        }
+        const settledAll = state.loaded + state.failed >= state.total;
+        if (settledAll && state.failed > 0) return; // set utama gagal: FX ikut gugur
+        if (++tries < 60) setTimeout(waitMain, 50);
+      })();
+    };
+    img.onerror = () => { fxState[failKey] = true; };
+    img.src = src;
+  }
+  function sliceStrip(img) {
+    const frames = [];
+    for (let i = 0; i < 4; i++) frames.push(slice(img, [i * 60, 0, 60, 60]));
+    return frames;
+  }
+  loadFx('assets/explosion.png', (img) => { SPR.boom = sliceStrip(img); return true; }, 'boomApplied', 'boomFailed');
+  loadFx('assets/explosion-big.png', (img) => { SPR.boomBig = sliceStrip(img); return true; }, 'bigApplied', 'bigFailed');
 })();

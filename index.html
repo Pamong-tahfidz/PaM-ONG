@@ -3,7 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>PaM-ONG v4 — Misi 1</title>
+<title>PaM-ONG v5 — Misi 1</title>
+<meta name="description" content="PaM-ONG — game web run-and-gun 2D gaya Metal Slug yang bisa dimainkan langsung di browser HP tanpa unduh: satu misi penuh, 3 bos, senjata POW, dan kendaraan SV-001. Gratis, tanpa library, vanilla Canvas 2D.">
+<meta name="keywords" content="PaM-ONG, game web, run and gun, Metal Slug, game HP, game browser, canvas 2D, game gratis, Operasi Senja">
+<meta name="author" content="AMOGENZ">
+<meta name="theme-color" content="#101018">
+<meta property="og:title" content="PaM-ONG v5 — Misi 1: Operasi Senja">
+<meta property="og:description" content="Game web run-and-gun 2D gaya Metal Slug di browser HP: misi penuh 6.400px, 3 bos, POW, SV-001. Main langsung, gratis, tanpa unduh.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://pamongame.vercel.app">
+<meta property="og:image" content="https://pamongame.vercel.app/logo.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PaM-ONG v5 — Misi 1: Operasi Senja">
+<meta name="twitter:description" content="Game web run-and-gun 2D gaya Metal Slug di browser HP. Main langsung, gratis, tanpa unduh.">
+<meta name="twitter:image" content="https://pamongame.vercel.app/logo.png">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,13 +43,14 @@
     <div class="title-row">
       <canvas id="avatarCanvas" width="108" height="108"></canvas>
       <div class="title-text">
-        <h1 class="logo">PaM&#8209;ONG</h1>
-        <p class="tagline">MISI 1 &mdash; OPERASI SENJA &bull; v4</p>
+        <img id="titleLogo" src="logo.png" alt="PaM-ONG" width="758" height="164">
+        <p class="tagline">MISI 1 &mdash; OPERASI SENJA &bull; v5</p>
       </div>
     </div>
     <div class="controls-box">
       <p><b>GERAK / AIM 8 ARAH</b>: &larr; &rarr; &uarr; &darr; / D-Pad</p>
       <p><b>A &mdash; TEMBAK</b> (tahan = auto): Z / J &bull; <b>B &mdash; LOMPAT</b>: X / K &bull; <b>C &mdash; GRANAT</b>: C / L</p>
+      <p><b>PISAU OTOMATIS</b> saat musuh (atau bos!) sangat dekat &mdash; damage besar + knockback.</p>
       <p>Naik SV-001: dekati tank lalu tekan &uarr;. Di dalam tank: A Vulcan, C Meriam, &darr;+B keluar.</p>
       <p>Urutan misi: Monster Laut &rarr; SV-001 &rarr; Di-Cokka &rarr; ROBOT TITAN. Bebaskan POW untuk senjata!</p>
       <p>Layar penuh &amp; putar landscape = tombol <b>&#9974; PENUH</b> dan <b>&#8635; PUTAR</b> di pojok kanan atas &mdash; manual, tidak otomatis.</p>
@@ -42,8 +60,9 @@
       <button id="settingsBtn" class="small-btn">PENGATURAN</button>
     </div>
     <p class="hint">Enter / Spasi juga bisa &bull; M = bisu &bull; P / Esc = jeda</p>
+    <p class="hint" id="titleHi"></p>
     <p class="hint" id="assetStatus"></p>
-    <p class="hint">Grafik karakter: &ldquo;Open Gunner&rdquo; oleh Master484 (CC-BY 3.0) &bull; Latar pegunungan: ansimuz (CC0) &bull; Sisa grafik: digambar kode oleh tim PaM-ONG</p>
+    <p class="hint">Grafik karakter: &ldquo;Open Gunner&rdquo; oleh Master484 (CC-BY 3.0) &bull; Latar: ansimuz (CC0) &bull; Tank Di-Cokka: 2D Tyrant (CC0) &bull; Ledakan: Master484 (CC0) &bull; Sisa grafik: digambar kode oleh tim PaM-ONG</p>
   </div>
 
   <!-- Menu pengaturan (hanya Musik / SFX / Getar — opsi layar otomatis

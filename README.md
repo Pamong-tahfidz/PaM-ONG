@@ -1,18 +1,19 @@
-# PaM-ONG v4 — Misi 1: Operasi Senja
+# PaM-ONG v5 — Misi 1: Operasi Senja
 
 Game web **run-and-gun** terinspirasi *Metal Slug* (SNK) yang bisa dimainkan sampai
 selesai satu misi penuh, ditulis dengan vanilla HTML5 Canvas 2D + JavaScript murni.
 
-**Tanpa library, tanpa framework.** Sejak v4 grafik karakter & latar memakai
-**aset gambar asli berlisensi bebas** (bukan lagi hanya gambar-kode):
-pemain/musuh/Titan dari **"Open Gunner" oleh Master484 (CC-BY 3.0)** dan latar
-pegunungan/hutan dari **"Mountain at Dusk" oleh ansimuz (CC0)** — atribusi
+**Tanpa library, tanpa framework.** Grafik memakai **aset gambar asli
+berlisensi bebas**: pemain/musuh/Titan dari **"Open Gunner" oleh Master484
+(CC-BY 3.0)**, latar pegunungan/hutan dari **"Mountain at Dusk" oleh ansimuz
+(CC0)**, tank Di-Cokka dari **"2D Side scrolling tank" oleh 2D Tyrant (CC0)**,
+dan ledakan dari **"Explosion Set 2" oleh Master484 (CC0)** — atribusi
 lengkap di [`assets/CREDITS.md`](assets/CREDITS.md). Suara tetap disintesis
 WebAudio di `audio.js`. Peran yang belum dapat aset cocok (POW, Shield Soldier,
-SV-001, Di-Cokka, Monster Laut, langit & ubin tanah) tetap memakai sprite
-prosedural proyek di `sprites.js`, yang juga menjadi **fallback penuh**: bila
-berkas aset gagal dimuat, game berjalan persis seperti v3. **Tidak ada aset
-rip dari game komersial mana pun.**
+SV-001, Monster Laut, langit & ubin tanah) tetap memakai sprite prosedural
+proyek di `sprites.js`, yang juga menjadi **fallback penuh**: bila berkas aset
+gagal dimuat, game berjalan persis seperti v3. **Tidak ada aset rip dari
+game komersial mana pun.**
 
 ## Cara menjalankan
 
@@ -26,6 +27,63 @@ python3 -m http.server 8080
 
 Di HP: game tampil penuh layar apa pun orientasinya. Kontrol sentuh muncul otomatis
 di perangkat sentuh.
+
+## Yang berubah di v5 (menjawab vonis pemain v4: "masih jauh dari Metal Slug")
+
+Fokus ronde ini adalah **GAME FEEL** — rasa main, kejelasan mekanik, dunia
+luas, kelancaran — bukan sekadar tambah fitur.
+
+1. **SMOOTH & rasa main (P0).**
+   - **Kamera ditulis ulang**: deadzone 26px + damping + lookahead searah
+     hadap/gerak yang diredam — tidak lagi kaku menempel pemain; kamera
+     diam saat pemain mati; klamp arena bos dipertahankan.
+   - **Animasi lari berbasis jarak tempuh** (`runDist`): frame kaki =
+     fungsi jarak yang benar-benar ditempuh, sinkron tanah, tidak
+     meluncur, independen dari laju frame.
+   - **Juice berlapis**: hit-stop berjenjang (kill 20ms, pisau 45ms,
+     ledakan bos 50–60ms) yang **tidak menelan input** (sinyal tepi
+     di-buffer), knockback musuh dari peluru & pisau, recoil senjata,
+     **teks skor melayang** (+100/+300/+15000…), popup hadiah POW besar
+     ("HEAVY MACHINE GUN!"), panah **GO! >>** berkala di luar arena.
+2. **MEKANIK JELAS (P0).**
+   - **Pisau diperluas**: kini melukai **bos juga** (Monster Laut,
+     Di-Cokka, Titan) dengan knockback & hit-stop — bukan hanya musuh.
+   - **HIGH SCORE persisten** (localStorage `pamong-highscore`): tampil
+     di layar judul ("SKOR TERBAIK"), di HUD (`HI …`), dan di layar
+     akhir dengan tanda "REKOR BARU!" — hanya naik, tidak pernah turun.
+   - Amunisi & stok granat tetap terlihat di HUD; mati tetap mengembalikan
+     ke pistol + granat dasar.
+3. **DUNIA LUAS (P1).** Misi 1 diperluas **4600 → 6400px, 5 → 7 zona**
+   (peta di bawah): zona gudang & kamp kedua, reruntuhan & menara ketiga,
+   POW 7 → **9**, musuh/peti/tong/dekor bertambah sepadan; invariant
+   "tidak ada jendela 300px kosong" tetap dijaga uji data.
+4. **ASET BARU (P1).** **Di-Cokka memakai tank CC0 asli** ("2D Side
+   scrolling tank" oleh 2D Tyrant — 3 frame animasi rantai, di-mirror)
+   lewat loader terpisah `PAM_TANK`; **ledakan memakai "Explosion Set 2"
+   Master484 (CC0)** lewat loader `PAM_FX` — `explosion.png` untuk
+   ledakan biasa (`SPR.boom`) dan `explosion-big.png` berpalet lebih
+   panas untuk ledakan besar (`SPR.boomBig`). SV-001 **sengaja tetap
+   gambar-kode**: turet aset tank menyatu & diam, sedangkan turet SV-001
+   wajib berputar 8 arah. Semua loader baru tunduk pada aturan lama:
+   hanya diterapkan bila set utama berhasil penuh — fallback satu gaya
+   tidak pernah tercemar. Total aset fungsional kini **8 berkas** (daftar
+   + bukti pemakaian per berkas di bagian Pengujian; perburuan kandidat
+   lain & penolakannya tercatat jujur di `docs/KOREKSI.md`).
+5. **UI/UX & wajah web (P1).** HUD diverifikasi tak bertabrakan di semua
+   pratinjau; tombol kecil dinaikkan ke target sentuh 44px; layar jeda &
+   selesai diperiksa visual. **Musik lobi**: musik mulai pada gestur
+   pertama di layar judul (browser melarang autoplay), menghormati
+   saklar Musik & tombol bisu, dan berlanjut mulus ke gameplay (loop
+   sama, `startMusic` idempotent). **Metadata web lengkap** (description,
+   theme-color, Open Graph, Twitter card), **logo berkas** `logo.png`
+   (wordmark karya sendiri, ukuran tampil terkunci 54px), **favicon &
+   ikon** (192/512/apple-touch) yang semuanya **diturunkan dari
+   logo.png** — favicon memakai varian sederhana huruf "P" dari logo
+   yang sama agar terbaca pada 16px — plus `manifest.webmanifest`.
+6. **Standar profesional.** Dokumen baru [`docs/ARSITEKTUR.md`](docs/ARSITEKTUR.md):
+   peta modul, aliran data, aturan CONFIG, dan panduan menambah musuh/
+   senjata/zona secara data-driven. Semua angka tuning v5 hidup di
+   `CONFIG` (kamera, hit-stop, siklus lari, GO!, jangkauan pisau).
 
 ## Yang berubah di v4 (menjawab 2 keluhan pemain v3)
 
@@ -115,14 +173,16 @@ Fire Bomb, POW, skor, timer, mati 1 pukulan — yang berubah adalah presentasi, 
 dan kontrol layar. Konstanta fisika diskalakan ×1,5 mengikuti resolusi (kecepatan tetap
 dinyatakan per detik).
 
-## Peta urutan Misi 1 (4600px, 5 zona)
+## Peta urutan Misi 1 (6400px, 7 zona — diperluas di v5)
 
 ```
 ZONA 1 Pantai & sungai         → MONSTER LAUT (mini-boss, 5000 poin)
 ZONA 2 Hutan & menara pengawas → jalur atas berisi POW; peti FLAME
-ZONA 3 Jembatan kayu besar     → SV-001 terparkir SEBELUM jembatan (±43% level)
+ZONA 3 Jembatan kayu besar     → SV-001 terparkir SEBELUM jembatan
 ZONA 4 Kamp musuh              → tenda-tenda, gudang, tong → Di-Cokka (mini-boss, 1200 poin)
-ZONA 5 Lapangan reruntuhan     → ROBOT TITAN (bos akhir, 15000 poin) → Mission Complete!
+ZONA 5 Gudang & kamp kedua     → tong berantai, peti roket/chaser, POW
+ZONA 6 Reruntuhan & menara 3   → jalur atas, POW terakhir sebelum bos
+ZONA 7 Lapangan akhir          → ROBOT TITAN (bos akhir, 15000 poin) → Mission Complete!
 ```
 
 Setiap bos mengunci arena (kamera & gerak pemain terbatas) sampai kalah. Urutan misi
@@ -199,9 +259,15 @@ Di dalam Slug pemain tidak bisa jongkok, melempar granat, atau memakai pisau.
 | `sprites.js` | Peta piksel semua sprite skala v3 (pemain kaki+torso 8 frame lari, musuh, SV-001, 3 bos, latar 4 lapis, ubin tanah bertekstur) → offscreen canvas. **Di v4 berperan sebagai fallback penuh + pemasok peran yang belum beraset** |
 | `audio.js` | Sintesis SFX + musik chiptune WebAudio, kanal musik/SFX terpisah (tidak berubah dari v2) |
 | `game.js` | CONFIG tuning, state, FSM musuh & 3 bos, fisika, Slug, tombol layar manual, loop, render, HUD |
-| `assets.js` | (v4) Pemuatan aset PNG dari `assets/`, pemotongan frame atlas, penimpaan entri `SPR`, pembuatan siluet kilatan, gambar ulang avatar; status termuat di `window.PAM_ASSETS` |
-| `assets/` | (v4) 5 berkas PNG aset berlisensi (pemain, musuh, Titan, 2 strip latar) + `CREDITS.md` berisi atribusi wajib |
+| `assets.js` | Pemuatan aset PNG dari `assets/`, pemotongan frame atlas, penimpaan entri `SPR`, pembuatan siluet kilatan, gambar ulang avatar; status di `window.PAM_ASSETS`; loader terpisah v5: tank (`PAM_TANK`) & ledakan (`PAM_FX`) — hanya teraplikasi bila set utama sukses penuh |
+| `assets/` | 8 berkas PNG aset gameplay berlisensi (pemain, musuh, Titan, 2 strip latar, tank, 2 ledakan) + `CREDITS.md` berisi atribusi wajib |
+| `logo.png`, `favicon.ico`, `favicon-32.png`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, `manifest.webmanifest` | Wajah web (v5): logo berkas di layar judul + favicon/ikon yang semuanya diturunkan dari `logo.png`; **bukan** aset gameplay |
+| `docs/ARSITEKTUR.md` | **Peta sistem untuk developer**: modul & tanggung jawab, aliran data, sistem aset & fallback, panduan menambah musuh/senjata/zona |
 | `docs/KOREKSI.md` | Catatan koreksi antar-agen — **wajib dibaca sebelum mengubah kode** |
+
+> **Pengembangan:** sebelum mengubah atau menambah konten, baca
+> [`docs/ARSITEKTUR.md`](docs/ARSITEKTUR.md) (pola CONFIG & data-driven
+> yang wajib diikuti) dan [`docs/KOREKSI.md`](docs/KOREKSI.md).
 
 Ukuran total ±350 KB (termasuk `assets/` ±129 KB). Semua konstanta tuning ada di `CONFIG` di atas `game.js`.
 
@@ -209,6 +275,71 @@ Kinerja: sprite & latar di-prerender sekali; culling viewport untuk semua entita
 semua proyektil/partikel memakai **pool tetap** (partikel ≤240 termasuk selongsong &
 debu); tanpa `shadowBlur`/gradien per frame; tanpa alokasi di loop panas; fixed
 timestep 60fps dengan fallback otomatis 30fps + hit-stop.
+
+## Pengujian yang sudah dilakukan (v5)
+
+- `node --check` lolos untuk `sprites.js`, `audio.js`, `game.js`, `assets.js`.
+- **Uji baru v5 agen pembangun: 128 uji lulus, 0 gagal**
+  (`~/workspace/audit-scratch/t5-v5.js` 86 uji + `t5-assets.js` 42 uji):
+  - **Mekanik**: matriks aim 8-arah terukur; pisau melukai musuh **dan
+    ketiga bos** + knockback (perisai tanpa knockback); amunisi spesial
+    habis → pistol; mati → pistol + granat dasar.
+  - **High score**: terbaca saat boot dari localStorage, "REKOR BARU!"
+    tersimpan, tidak pernah turun, HUD `HI` mengikuti skor berjalan.
+  - **Hit-stop tidak menelan input**: lompat yang ditekan di tengah
+    hit-stop tetap dieksekusi pada frame asli berikutnya.
+  - **Kamera**: damping terukur, deadzone interior, lookahead berbalik
+    arah, invariant empat sudut di arena Monster Laut & arena Titan
+    geometri v5, kamera diam saat pemain mati.
+  - **Data level 6400px**: POW = 9, rantai tong valid, cakupan jendela
+    300px penuh, musuh ber-y tepat di platform, klamp & salvo Titan
+    di-staging ulang pada geometri baru, ujung-ke-ujung Mission
+    Complete +15000.
+  - **Aset loader terpisah**: tank & kedua ledakan hanya teraplikasi
+    bila set utama sukses penuh; kegagalan satu berkas FX hanya
+    menggugurkan perannya; render membuktikan frame tank 136px, frame
+    ledakan aset 60px, dan cabang `SPR.boomBig` untuk ledakan besar
+    (penanda kanvas 61px).
+  - **Musik lobi**: belum jalan sebelum gestur; mulai pada gestur
+    pertama di judul; MULAI tidak mengulang/menumpuk musik (timer yang
+    sama); saklar Musik mati = gestur tidak memulai musik.
+  - **Wajah web struktural**: metadata/OG/Twitter lengkap, favicon &
+    manifest tertaut, logo = `img#titleLogo` dengan kunci CSS 54px,
+    dimensi berkas ikon persis (512/192/180, logo 758×164).
+- **Audit independen v5 (agen pengoreksi): 87 uji baru, semua lulus**
+  (`~/workspace/audit-scratch/t5-audit.js`) — kamera dinamis kedua
+  arena saat bergerak nyata, siklus lari pada 60 & 30 fps, hit-stop
+  lewat loop `frame()` asli, pisau ke ketiga bos + sapuan NaN ke
+  seluruh musuh, siklus hidup high score penuh, invariant data,
+  semantik kegagalan loader per berkas, wajah web struktural,
+  disiplin CONFIG. Audit menemukan & memperbaiki **3 bug nyata**
+  (pemicu Titan di luar arena → pemain/Slug teleport; musik lobi
+  mati permanen setelah KE JUDUL; teks pengumuman membeku permanen
+  di layar akhir pada jalur mati-saat-pengumuman) + kepatuhan
+  CONFIG/dokumentasi — rincian & pelajaran di `docs/KOREKSI.md`.
+- **Regresi suite lama (setelah rebase audit)**: audit v4 **66/66**,
+  `t4-v4` **49/49**, layar v3 **29/29**, pemeriksaan langit v4.1
+  lulus, suite era v3 (`t3-*`/main3) **145/145**. Kegagalan baseline
+  (14 di main3 + 1 di t4-v4) terbukti **semuanya** perubahan disengaja
+  v5 — staging Titan geometri 4600px, "POW tepat 7"→9, kunci `SPR`
+  milik assets.js, string versi A12 — di-rebase di berkas uji;
+  tidak ada satu pun yang ternyata bug kode.
+- **Gerbang visual browser sungguhan** (Chromium headless via CDP):
+  8 tangkapan di `previews/` diperiksa dengan mata — judul (logo berkas
+  + avatar 84px + kredit lengkap), gameplay awal, tengah misi (popup
+  "HEAVY MACHINE GUN!" + POW), Di-Cokka bertank CC0, Titan, ledakan
+  aset besar/kecil, layar JEDA, layar MISI SELESAI (tally + REKOR
+  BARU). `PAM_ASSETS`/`PAM_TANK`/`PAM_FX` semua `applied` di browser.
+- **Bukti pemakaian per berkas aset fungsional (8)**: `player.png` →
+  frame hero (render pemain); `enemies.png` → frame Rebel/Grenade/
+  Bazooka; `titan.png` → badan mech Titan; `bg-far.png`/`bg-mid.png` →
+  lapisan parallax; `tank.png` → frame Di-Cokka; `explosion.png` →
+  `SPR.boom` (semua ledakan kecil); `explosion-big.png` → `SPR.boomBig`
+  (ledakan besar via flag partikel). Target 17 berkas **belum tercapai
+  secara jujur** — kandidat lain (tileset hutan Open Gunner Expansion,
+  ubin negara, air laut, POW/tawanan, perisai) gugur di verifikasi
+  lisensi/jalur unduh atau kecocokan; daftar lengkap di KOREKSI.md.
+- Belum diuji di HP fisik — tetap target uji berikutnya.
 
 ## Pengujian yang sudah dilakukan (v4)
 
@@ -328,10 +459,37 @@ timestep 60fps dengan fallback otomatis 30fps + hit-stop.
 
 - **Misi 2+**, rute bercabang, variasi latar lain.
 - Granat **Stone**; senjata Iron Lizard; musuh Mortar/Minelayer.
-- Penyimpanan skor tertinggi & PWA/offline.
+- PWA/offline penuh (manifest dasar sudah ada di v5; service worker belum).
 - Suara announcer manusia — announcer masih teks + jingle sintesis.
 - Angka damage hasil riset bersifat kualitatif; tuning sekarang perlu playtest rasa
   di HP sungguhan.
+
+## Titik rawan untuk agen pengoreksi berikutnya (baru di v5)
+
+1. **Rebase uji lama**: staging Titan di suite era v3 memakai geometri
+   4600px (pemicu 4150, Titan x=4400) — geser +1800 untuk v5; "POW tepat
+   7" kini 9; daftar kunci `SPR` kini memuat `tankAsset/tankFrames/
+   tankFramesF/boomBig`; string A12 `t4-v4` masih menuntut "v4".
+2. **Urutan loader assets.js**: set utama (5) → tank (indeks Image 6) →
+   FX ledakan (7, 8). Loader terpisah menunggu `state.applied` lewat
+   polling 50ms hingga 60× — di jaringan sangat lambat, periksa apakah
+   tank/FX tetap teraplikasi (dan tidak pernah teraplikasi saat set
+   utama gagal).
+3. **Ledakan aset vs gambar-kode**: frame aset seragam 60×60 (pertumbuhan
+   dari gambar di dalam bingkai), sedangkan gambar-kode bertumbuh lewat
+   ukuran kanvas [24,39,51,60] — rasa ledakan kecil di mode fallback
+   sedikit berbeda ukurannya; nilai di playtest.
+4. **Musik lobi**: gestur pertama apa pun di judul (termasuk klik PENUH/
+   PUTAR) memulai musik; setelah KE JUDUL dari pause/akhir, musik lobi
+   baru mulai pada gestur berikutnya (stopMusic dipanggil transisi).
+   Periksa di HP nyata apakah ini terasa janggal.
+5. **Kamera lookahead + arena**: lookahead diredam terpisah
+   (`CAM_LOOK_SMOOTH`) — saat pemain berbalik arah cepat di tepi arena,
+   pastikan tidak ada frame di mana bos keluar layar (invariant uji
+   memakai posisi diam; gerak dinamis belum teruji stub).
+6. **Popup POW besar** memakai pool teks melayang yang sama dengan teks
+   skor kecil (24 slot) — dalam baku tembak ramai, popup bisa saling
+   menggantikan; nilai keterbacaannya di pratinjau & playtest.
 
 ## Titik rawan untuk agen pengoreksi berikutnya (baru di v4)
 

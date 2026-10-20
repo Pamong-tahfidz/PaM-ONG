@@ -109,7 +109,7 @@ body.rot #stageWrap {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(10, 10, 18, 0.85);
   color: #f2f0e6;
   text-align: center;
@@ -136,6 +136,17 @@ body.rot #stageWrap {
   border-radius: 50%;
 }
 .title-text { text-align: left; }
+/* Logo judul (berkas logo.png): ukuran tampil TERKUNCI seperti avatar —
+   tinggi tetap, lebar mengikuti rasio, tidak pernah bisa melebar
+   menutupi layar (pelajaran bug avatar raksasa v4 berlaku untuk semua
+   gambar layar judul, bukan hanya canvas). */
+#stage #titleLogo {
+  display: block;
+  height: 54px;
+  width: auto;
+  max-width: 100%;
+  flex: none;
+}
 
 .logo {
   font-size: 46px;
@@ -149,11 +160,11 @@ body.rot #stageWrap {
 
 .controls-box {
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
   color: #d8d4c4;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 6px 12px;
+  padding: 5px 12px;
   max-width: 96%;
 }
 .controls-box b { color: #f2c230; }
@@ -187,7 +198,7 @@ body.rot #stageWrap {
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
   padding: 8px 16px;
-  min-height: 42px;
+  min-height: 44px;
   cursor: pointer;
 }
 
