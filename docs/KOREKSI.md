@@ -631,3 +631,26 @@ Keduanya dimuat loader terpisah `window.PAM_FX` dengan semantik tank: hanya bila
 - `t5-v5.js` (suite pembangun): asersi pemicu 5750 → 5910 dan staging arena 5800 → 5950 mengikuti perbaikan bug pemicu (entri pertama di atas).
 
 **Hasil akhir semua suite:** audit independen **87/87**, pembangun **86/86** + **42/42**, warisan **66/66** + **49/49** + **145/145** + **29/29**, pemeriksaan langit v4.1 lolos — total 504 asersi hijau. Sisa risiko jujur: belum ada playtest HP fisik ronde ini (rasa kamera/hit-stop & keterbacaan favicon di tab browser nyata hanya bisa disahkan di perangkat), dan pentasan pratinjau cokka tidak menampilkan pemain di dalam bingkai (kosmetik pentasan, bukan cacat game).
+
+---
+
+## [2026-10-20] v5.1 — BUG: kontrol sentuh bocor ke lobi & semua layar menu di HP (DIPERBAIKI)
+
+**Laporan pemilik (playtest HP fisik, Vivo Y12):** "Lobi kok sudah muncul banyak tombol." Di layar judul — dan ternyata juga pengaturan, jeda, dan selesai — D-Pad + tombol A/B/C sudah tampil sebelum permainan dimulai.
+
+**Penyebab:** Aturan tampil di style.css hanya digerbang KEMAMPUAN perangkat: `body.has-touch #touchControls { display:flex }` dan `@media (pointer: coarse) { #touchControls { display:flex } }`. Keduanya buta status layar, jadi pada perangkat sentuh kontrol gameplay dirender permanen di atas semua layar. Cacat ini lolos dari SEMUA gerbang sebelumnya karena pratinjau & suite berjalan di desktop (tanpa has-touch, pointer fine) — kelas cacat yang hanya terlihat pada lintasan emulasi sentuh/perangkat nyata.
+
+**Perbaikan (gerbang ganda — kemampuan DAN status):**
+- `style.css`: kedua aturan digerbang kelas status `playing` di body → `body.has-touch.playing #touchControls` dan `@media (pointer: coarse) { body.playing #touchControls }`.
+- `game.js` `showScreen(id)` (titik transisi terpusat, pola yang sama dengan tombol jeda pojok): menambah `document.body.classList.toggle('playing', !id && G.screen === 'play')`. Terverifikasi di semua pemanggil: startGame (screen='play' sebelum showScreen(null)) dan setPaused(false) menyalakan; endScreen (id 'endScreen'), setPaused(true), openSettings, closeSettings (ke jeda maupun judul), serta menuBtn/quitBtn (showScreen('titleScreen')) mematikan. Boot awal: body tanpa kelas → lobi bersih. Respawn tidak melewati showScreen → kelas bertahan selama mati→respawn, kontrol tidak berkedip hilang.
+- Perilaku desktop tidak berubah (tanpa has-touch & pointer fine, aturan tampil tidak pernah cocok); perilaku bermain di HP tidak berubah (display flex penuh, termasuk setelah lanjut dari jeda).
+
+**Bukti uji:**
+- Suite baru `~/workspace/audit-scratch/t51-touchgate.js`: **26/26** — asersi statik CSS/JS + rantai status penuh di stub sentuh (boot bersih → main aktif → mati/respawn tetap aktif → jeda mati → pengaturan dari jeda & judul mati → lanjut aktif lagi → KE JUDUL mati → selesai/game over mati) + konsistensi stub desktop.
+- Verifikasi Chromium headless `~/workspace/audit-scratch/t51-verify.js`: **11/11** — getComputedStyle(#touchControls).display diukur pada TIGA jalur: (A) kelas has-touch ditambahkan: judul none, pengaturan none, bermain flex, jeda none, lanjut flex, selesai none; (B) emulasi perangkat sentuh CDP (setTouchEmulationEnabled + setDeviceMetricsOverride mobile; matchMedia('(pointer: coarse)') terbukti matches): judul none, bermain flex, jeda none; (C) desktop murni: bermain tetap none. Catatan metode: `Emulation.setEmulatedMedia` fitur pointer TIDAK mengubah matchMedia pada build Chromium ini (prasyarat gagal membuktikannya) — emulasi pointer yang sah adalah emulasi perangkat CDP.
+- Bukti visual: `previews/preview-touch-title.png` — layar judul dalam mode sentuh kini bersih total (hanya tombol pojok PENUH/PUTAR/bisu yang memang selalu ada).
+- Regresi: suite lama tetap hijau — pembangun 86/86 + 42/42, audit independen 87/87, warisan 66/66 + t3-screen selesai tanpa GAGAL + pemeriksaan langit v4.1 lulus.
+
+**Temuan samping (bukan akibat perbaikan ini, dipulihkan & dilaporkan apa adanya):** saat menjalankan suite, lima berkas wajah web di root proyek (favicon.ico, favicon-32.png, apple-touch-icon.png, icon-192.png, icon-512.png) ditemukan HILANG dari ~/workspace/pam-ong/ (t5-assets gagal ENOENT) — padahal terverifikasi ada pada 13:08 UTC dan terunggah ke GitHub 14:39 UTC. Penyebab hilangnya tidak teridentifikasi dari jejak yang ada (bukan oleh perubahan v5.1: diff hanya style.css + showScreen). Kelimanya dipulihkan dari pohon staging rilis ~/workspace/.deploy-v5/tree/ setelah terbukti identik byte-per-byte (SHA-256 + cmp) dengan salinan yang tayang di pamongame.vercel.app; t5-assets kembali 42/42. Agen rilis berikutnya: periksa apakah alur staging-mu memindahkan (bukan menyalin) berkas root proyek.
+
+**Pelajaran untuk agen lain:** (1) Aturan tampil berbasis kemampuan perangkat SAJA akan selalu membocorkan UI gameplay ke menu — visibilitas elemen gameplay wajib digerbang status layar juga. (2) Gerbang visual desktop TIDAK bisa melihat cacat kelas sentuh: setiap rilis yang menyentuh UI wajib menyertakan lintasan emulasi sentuh (kelas has-touch + emulasi perangkat CDP) dalam pemeriksaannya, atau cacat seperti ini lolos terus sampai ditemukan pemilik di HP fisik.

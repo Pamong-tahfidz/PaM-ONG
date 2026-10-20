@@ -726,6 +726,13 @@ function showScreen(id) {
   const ids = ['titleScreen', 'endScreen', 'settingsScreen', 'pauseScreen'];
   for (const s of ids) document.getElementById(s).classList.toggle('hidden', s !== id);
   if (!id) for (const s of ids) document.getElementById(s).classList.add('hidden');
+  // v5.1: kontrol sentuh mengikuti STATUS layar, bukan hanya kemampuan
+  // perangkat. Kelas 'playing' di body adalah gerbang kedua di style.css
+  // untuk aturan tampil #touchControls: aktif tepat saat bermain tanpa
+  // panel di atasnya — startGame & setPaused(false) memanggil
+  // showScreen(null) dengan G.screen === 'play'; judul, pengaturan,
+  // jeda, dan selesai selalu mematikannya.
+  document.body.classList.toggle('playing', !id && G.screen === 'play');
 }
 
 function startGame() {

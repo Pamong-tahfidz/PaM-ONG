@@ -26,7 +26,18 @@ python3 -m http.server 8080
 ```
 
 Di HP: game tampil penuh layar apa pun orientasinya. Kontrol sentuh muncul otomatis
-di perangkat sentuh.
+di perangkat sentuh — **hanya saat bermain** (v5.1: di layar judul/pengaturan/
+jeda/selesai kontrol sentuh disembunyikan; lihat catatan v5.1 di bawah).
+
+## Yang berubah di v5.1 (perbaikan mikro dari playtest HP fisik)
+
+- **Lobi bersih di HP**: D-Pad + tombol A/B/C tidak lagi muncul di layar
+  judul/pengaturan/jeda/selesai pada perangkat sentuh. Aturan tampil
+  `#touchControls` kini digerbang GANDA — kemampuan sentuh DAN status
+  bermain (kelas `playing` di `<body>`, diatur terpusat oleh
+  `showScreen()` di game.js). Bukti & pelajaran: entri v5.1 di
+  `docs/KOREKSI.md`; uji stub `t51-touchgate.js` (26/26) + verifikasi
+  Chromium emulasi sentuh `t51-verify.js` (11/11).
 
 ## Yang berubah di v5 (menjawab vonis pemain v4: "masih jauh dari Metal Slug")
 

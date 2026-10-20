@@ -247,8 +247,12 @@ body.rot #stageWrap {
   pointer-events: none;
   z-index: 10;
 }
-body.has-touch #touchControls { display: flex; }
-@media (pointer: coarse) { #touchControls { display: flex; } }
+/* Gerbang GANDA (v5.1): kemampuan sentuh DAN status bermain aktif
+   (kelas `playing` di body, diatur showScreen di game.js). Aturan
+   kemampuan saja membocorkan D-Pad + A/B/C ke layar judul/pengaturan/
+   jeda/selesai di HP — status layar adalah gerbang yang menentukan. */
+body.has-touch.playing #touchControls { display: flex; }
+@media (pointer: coarse) { body.playing #touchControls { display: flex; } }
 
 #dpad {
   display: grid;
