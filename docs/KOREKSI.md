@@ -385,3 +385,99 @@ Format entri: `## [tanggal] Judul singkat` lalu **Kesalahan**, **Penyebab**, **P
 - **Timer habis saat state 'dead':** timer memang tertahan di 0 selama animasi mati, tetapi tick pertama setelah respawn selalu tertutup kebal respawn 2 detik (killPlayer no-op) dan timer direset ke 30 oleh cabang yang sama. Teruji empiris: pemain yang mati dengan timer=1 mati tepat satu kali. Berbeda dari kasus Slug audit v2 karena di sana pemain langsung bisa dikendalikan tanpa kebal.
 - **Keadilan spawn penembak:** lemparan granat pertama terjadi saat musuh sudah di sx=88 (di dalam layar) dan roket bazooka pertama di sx=55 — syarat spawn (camX+525) + ambang jarak tembak membuat proyektil pertama selalu lahir terlihat; klaim "menembak dari luar layar" tidak terbukti pada data kiriman.
 - **Reskala ×1,5 konsisten:** lompatan terukur 159,3px (teori 163,8); seluruh 9 transisi platform jalur atas/jembatan terjangkau dalam simulasi input nyata; Slug bisa lewat DI BAWAH maupun lompat KE ATAS jembatan 2; tidak ada konstanta era 320×224 yang bocor (grep angka mencurigakan hanya mengenai koordinat data level); 97 fungsi game.js tanpa yatim, 42 kunci CONFIG semuanya terpakai, nol kolisi nama antar-berkas.
+
+## [2026-10-20] v4 — Avatar judul RAKSASA menutupi seluruh layar (bug presentasi lolos semua uji stub)
+
+**Kesalahan:** Di layar judul v3, canvas avatar (potret 108×108) tergambar sebesar ±95%×100% panggung, menutupi logo, kotak instruksi, dan tombol MULAI MISI — klik ke tombol tertolak karena tertutup avatar. Pemilik menemukannya saat memainkan versi live; gameplay sendiri bersih.
+
+**Penyebab:** Aturan CSS generik `#stage canvas { position:absolute; left:0; top:0; width:100%; height:100% }` ikut berlaku ke `#avatarCanvas` (yang tinggal di dalam `#stage`). Spesifisitasnya (1 ID + 1 elemen) mengalahkan aturan `#avatarCanvas { width:96px; height:96px }` (1 ID saja). Semua uji v1–v3 adalah stub Node yang tidak pernah merender CSS/DOM sungguhan, jadi tidak ada satu pun uji yang bisa melihatnya.
+
+**Perbaikan:** Struktural, bukan tambal spesifik satu elemen: (1) aturan canvas sepenuh-panggung dibatasi eksplisit menjadi `#stage > #game, #stage > #hud { ... }` — tidak ada lagi aturan generik yang bisa menelan canvas lain; (2) avatar diperkuat sebagai `#stage #avatarCanvas { position: static; flex: none; width: 84px; height: 84px; border-radius: 50% }`. Diverifikasi di browser sungguhan (Chromium headless via CDP): gaya terhitung avatar = 84×84 statis, dan `elementFromPoint` di tengah tombol MULAI mengembalikan tombol itu sendiri (bisa diklik). Uji struktural baru membaca `style.css`/`index.html` dan meng-assert tidak ada aturan 100% yang terjangkau avatar.
+
+**Pelajaran untuk agen lain:** **Uji stub tidak melihat presentasi.** Rangkaian uji logika yang hijau 100% tidak mengatakan apa-apa tentang CSS, tata letak, z-order, atau elemen yang tertutup. Setiap rilis WAJIB diperiksa visualnya (tangkapan layar browser sungguhan) sebelum disebut selesai — dan aturan CSS generik berbasis elemen (`#stage canvas`, `div *`, dst.) adalah jebakan spesifikitas: batasi selalu ke id/kelas eksplisit.
+
+## [2026-10-20] v4 — Pergantian grafik ke aset asli berlisensi (metode & jebakan)
+
+**Kesalahan (yang dihindari):** Sprite peta-piksel kode ditolak pemilik dua ronde ("burik, gak seperti Metal Slug"). Mengganti dengan aset unduhan membawa risiko lisensi: kandidat yang DITOLAK setelah diperiksa halaman sumbernya — paket hutan edermunizz (lisensi **CC BY-ND**: turunan dilarang, padahal pemotongan/skala itu wajib), "Heavy Terror Machine" (ada sengketa lisensi berkas di komentar halamannya), sheet "SNES Style Soldier" (jenis lisensi tidak tertera di halaman). Yang dipakai: **Open Gunner — Master484 (CC-BY 3.0**, tertulis di halaman & di kaki sheet) untuk pemain/musuh/mech Titan, dan **Mountain at Dusk — ansimuz (CC0**, ikon lisensi + `license.txt` dalam paket) untuk latar. Atribusi di `assets/CREDITS.md`, baris kredit di layar judul, dan README.
+
+**Penyebab/Jebakan teknis yang ditemukan selama integrasi:**
+1. Kotak frame pada sheet Open Gunner **berbagi tepi putih** — pendeteksi kotak naif menggabungkan satu baris menjadi satu "kotak" selebar 409px. Solusi: deteksi strip dulu, lalu pecah strip pada kolom yang putih ≥92% setinggi strip.
+2. Ekstraksi teks halaman (browser) kadang menghilangkan blok "License(s)"/"File(s)" — verifikasi lisensi dilakukan dari ikon lisensi & teks lisensi di dalam berkas unduhan itu sendiri, bukan dari cuplikan halaman saja.
+3. Konvensi arah hadap v3: sprite musuh menghadap KIRI bawaan (di-flip saat `face > 0`), pemain & Titan tidak. Frame aset menghadap kanan → frame musuh & mech **di-mirror saat pembangunan aset**, bukan dengan mengubah logika gambar game.
+4. Konten karakter sumber hanya 45px; dunia kita 60px → skala seragam **4/3 nearest** (=60px pas). Mech 101px → **3/2** (=151px ≈ kotak Titan 150). Pose kembar "napas" di sheet ternyata beda registrasi beberapa piksel — memakainya sebagai frame napas membuat figur bergeser samping; varian napas dibuat dengan memampatkan frame yang sama 2px (jangkar kaki tetap).
+5. Strip latar aset wajib mulus pada **periode 960** (game menggambar pada offset mod 960): lapisan diskala ke lebar yang membagi 960 (480/960) dengan jangkar bawah, bukan ke tinggi 270 membabi buta (pitch 918 menyisakan sambungan fase 42px).
+6. Chromium headless lokal menolak navigasi ke `localhost` (ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS) — verifikasi visual memakai `file://` + `--allow-file-access-from-files`. Itu batas lingkungan uji, BUKAN bug game (aset termuat 5/5, `applied: true`).
+7. Teleport uji untuk memotret bos bertabrakan dengan sistem arena game sendiri: Di-Cokka aktif & mendorong pemain keluar dari titik teleport (tabrakan badan bos), dan kunci arena Monster Laut mengklamp posisi pemain. Uji visual bos harus menonaktifkan pemicu/lock bos lain lebih dulu — perilaku gamenya sendiri benar.
+
+**Perbaikan/Keputusan:** Integrasi lewat `assets.js` yang menimpa entri `SPR` setelah SEMUA berkas termuat (satu gagal = fallback penuh v3, tidak ada campuran gaya); `drawTitan` bercabang pada `SPR.titanAsset` (mech digambar jangkar bawah-tengah; core & bar HP tetap kode); indeks siklus jalan musuh mengikuti panjang array aktif (2 frame v3 / 8 frame aset, laju sama). Kotak tabrak & semua mekanik tidak diubah.
+
+**Pelajaran untuk agen lain:** Untuk aset pihak ketiga: lisensi dibaca dari sumber primer (halaman + berkas), dicatat per berkas, dan kandidat berlisensi ND/tidak jelas/sengketa langsung dibuang betapa pun cocoknya. Saat menukar sumber gambar, samakan DULU konvensi (arah hadap, jangkar, periode tiling, registrasi antar-frame) — sebagian besar bug integrasi hidup di konvensi, bukan di kode.
+
+## [2026-10-20] AUDIT v4 — Pita damage core Titan tidak mengikuti core VISUAL cabang aset
+
+**Kesalahan:** `drawTitan` cabang aset (v4) menggambar core berdenyut di rel (30,40) — dada mech. Tetapi `damageTitan` memakai pita vertikal yang tetap di rel y+57..75 (posisi core sprite v3 yang digambar di y+62). Akibatnya pada cabang aset: tembakan tepat ke core yang menyala (rel 40..49) hanya dihitung damage ×1, sedangkan tembakan ke pinggang mech (rel 57..75, TANPA core visual) justru ×2. Terukur uji audit: tembakan rel 44 → delta 5 (×1), rel 66 → delta 10 (×2) — persis kebalikan dari yang dilihat pemain.
+
+**Penyebab:** Integrasi aset memindahkan gambar core untuk mech (klaim README "(30,40) relatif") tanpa memindahkan pita damage yang menilainya — dua sumber kebenaran untuk satu titik lemah, kambuhan pola "kotak vs gambar" dari audit v2 (kepala Monster Laut).
+
+**Perbaikan:** Pita kini mengikuti visual yang aktif, persis seperti `drawTitan`: `const coreBandY = (SPR.titanAsset && SPR.titanMech) ? titan.y + 36 : titan.y + 57` (pita 18px menutupi core visual 9px: aset 36..54 menutupi 40..49; fallback 57..75 menutupi 62..71). Terverifikasi uji: aset — rel 44 → ×2, rel 48 (tepi bawah core) → ×2, rel 66 → ×1, kaki rel 130 → ×1; fallback — rel 66 → ×2, rel 44 → ×1. Uji laser satu-damage-per-sinar tidak berubah.
+
+**Pelajaran untuk agen lain:** Titik lemah visual yang dipindah wajib memindahkan JUGA geometri penilaiannya dalam commit yang sama. Uji penerimaan titik lemah selalu: tembak TEPAT ke gambarnya (bukan ke angka band), dan tembak ke tempat TANPA gambarnya — keduanya harus memberi hasil yang benar.
+
+## [2026-10-20] AUDIT v4 — Penghitung POW HUD tertabrak gugus tombol pojok (cacat visual 3b)
+
+**Kesalahan:** Teks "POW xN" digambar rata-kanan di (VIEW_W−10, 16) — tepat di bawah cluster tombol HTML pojok kanan atas (PENUH/PUTAR/bisu/jeda, ±200px CSS lebar). Pada pratinjau gameplay browser sungguhan, teks POW tertutup sebagian tombol (terbaca "P△W"). `elementFromPoint` di posisi POW lama mengembalikan `pauseBtn` — bukti terprogram.
+
+**Penyebab:** HUD canvas (480×270, di-scale ke panggung) dan tombol HTML (ukuran CSS tetap) berbagi sudut kanan atas tanpa ada yang menghitung tumpang tindihnya; semua uji v1–v4 adalah stub Node yang tidak merender tata letak.
+
+**Perbaikan:** POW dipindah ke samping timer (tengah atas): rata-kiri di (VIEW_W/2+30, 16), baseline sama dengan SKOR. Terverifikasi uji terprogram: span teks [270..317]×[3..16] tidak beririsan dengan rect cluster pada skala 2 ([380..480]×[0..25]) maupun skala 1,45 ([342..480]×[0..35]); SKOR (10,16) & timer (240,20, rata-tengah) tidak bergeser; di browser sungguhan `elementFromPoint` pada pusat teks POW mengembalikan canvas game (bukan tombol). Pratinjau gameplay menunjukkan "POW x0" bersih di samping timer.
+
+**Pelajaran untuk agen lain:** Setiap elemen HUD di tepi layar wajib diuji terhadap rect CSS elemen HTML yang menindihnya pada skala tampil nyata (bukan koordinat canvas saja) — cluster tombol 200px CSS memakan 100px+ koordinat canvas pada stage kecil.
+
+## [2026-10-20] AUDIT v4 — Noda bokeh & garis melintang di langit (cacat visual 3a)
+
+**Kesalahan:** Dua elemen langit v3 terbaca sebagai cacat pada pratinjau gameplay: (1) `drawCloudStrip()` menumpuk lingkaran krem alpha 0,28–0,50 beradius sampai 44px + alas `fillRect` — di layar menjadi noda bokeh raksasa tembus pandang yang menutupi langit dan mengganggu keterbacaan teks announcer; (2) `band()` di `drawBgSky()` menggambar barisan lingkaran r=42 + `fillRect` sepenuh lebar di y=58 & y=96 — membentuk GARIS MELINTANG keras di tengah langit. Identifikasi dari kode + pratinjau: blob bokeh = cloudStrip (posisi cluster sama di dua pratinjau, warna krem khas), garis = rect band() sepenuh lebar (y cocok dengan garis pada pratinjau).
+
+**Penyebab:** Awan dirancang sebagai "organik" dari lingkaran besar ber-alpha tinggi; pita dirancang sebagai "awan jauh membusur" tetapi dieksekusi sebagai barisan lingkaran + strip keras. Keduanya hanya dinilai dari kode, tidak pernah dilihat di layar sampai pemilik mengeluh.
+
+**Perbaikan:** (1) `band()` DIHAPUS total dari `drawBgSky` (langit kini gradasi + bintang + matahari saja); halo matahari dilembutkan (0,18→0,10; 0,30→0,16). (2) `drawCloudStrip()` ditulis ulang: gumpalan PIPIH kecil (5 lingkaran r 5–9px sebaris + alas 3px, tinggi total ≤12px), alpha ≤0,14, dan awan yang menembus tepi digambar ulang di sisi seberang agar strip tetap mulus pada periode 960. Bukti: analisis piksel pratinjau — fraksi piksel krem-bokeh di wilayah langit turun dari 0,63%/0,37% (game/titan lama) menjadi 0,00% (ketiga pratinjau baru); tidak ada lagi garis melintang pada gambar.
+
+**Pelajaran untuk agen lain:** Alpha >0,25 pada bentuk besar = noda, bukan awan. Setiap elemen latar baru wajib difoto di browser sungguhan sebelum dianggap selesai — dan uji piksel sederhana (fraksi warna di wilayah langit) bisa menjadi regresi otomatis untuk cacat visual semacam ini.
+
+## [2026-10-20] AUDIT v4 — Teks status aset menyesatkan saat kegagalan sebagian
+
+**Kesalahan:** Bila sebagian berkas aset gagal, `setStatus()` menulis "Sebagian aset tidak termuat — peran itu memakai sprite cadangan." Padahal semantik `apply()` adalah: satu berkas gagal = TIDAK ADA yang diterapkan — SELURUH peran memakai sprite v3. Frasa "peran itu" menyiratkan hanya peran yang gagal yang fallback.
+
+**Penyebab:** Teks status ditulis dari sudut pandang kegagalan per-berkas, bukan dari keputusan apply() yang bersifat semua-atau-tidak-sama-sekali.
+
+**Perbaikan:** Teks menjadi "Sebagian aset tidak termuat — seluruh grafik memakai sprite cadangan (v3). Game tetap bisa dimainkan penuh." Terverifikasi uji: pada pola gagal [0..4], [2], [1,3], dll., teks mengandung frasa jujur tersebut; `applied=false` dan identitas seluruh SPR v3 utuh.
+
+**Pelajaran untuk agen lain:** Teks status/UX yang menjelaskan fallback harus ditulis dari KEPUTUSAN yang diambil kode (semua-atau-tidak), bukan dari peristiwa pemicunya (satu berkas gagal) — keduanya bisa berbeda makna.
+
+## [2026-10-20] AUDIT v4 — Zona hantu kepala musuh aset TERUKUR, di bawah ambang (bukan bug)
+
+**Temuan:** Frame musuh aset 64px digambar jangkar kaki pada kotak tabrak 39px. Diukur dari alpha aktual tiap frame (PIL): tinggi opak 59–61px → kepala visual menjulang 20–22px di atas kotak (klaim README "±21px" BENAR). Ambang perbaikan yang ditetapkan brief: >25px. Karena 22px < 25px, TIDAK diperbaiki — menaikkan kotak akan mengubah keseimbangan tembak-menembak yang sudah diaudit, mengecilkan gambar merusak konsistensi gaya.
+
+**Catatan untuk playtest:** tembakan setinggi kepala visual (0–22px di atas kotak) meleset secara adil-menurut-kotak; ini disengaja (musuh seukuran pemain seperti Metal Slug). Bila pemain mengeluh "tembakan kena kepala tapi tidak mati", naikkan kotak ke 44px ATAU turunkan gambar — jangan keduanya.
+
+**Pelajaran untuk agen lain:** Tetapkan ambang angka SEBELUM mengukur; ukur dari alpha aktual (bukan ukuran canvas); dan catat keputusan "sengaja tidak diperbaiki" beserta angkanya agar tidak dibuka ulang tanpa data baru.
+
+## [2026-10-20] AUDIT v4 — Verifikasi lisensi aset (cek silang independen)
+
+**Hasil:** Klaim lisensi pembangun TERVERIFIKASI dari sumber independen:
+- **Open Gunner (Master484):** halaman OGA "Open Gunner Starter Kit" ada dan memuat persis isi yang dipakai (hero 120+ frame, enemy soldier, robot mech); "Attribution Instructions" di halaman mewajibkan kredit ke "Master484" (ciri lisensi keluarga BY, bukan CC0) — cocok dengan klaim CC-BY 3.0 (+OGA-BY); kaki sheet menyatakan "LICENSE: CC-BY 3.0". Kebijakan OGA sendiri hanya menerima lisensi bebas yang mengizinkan komersial & modifikasi (CC-BY 3.0, CC-BY-SA 3.0, OGA-BY 3.0, GPL/LGPL, CC0) — tidak ada skenario lisensi halaman ini yang melarang pemakaian kita. Atribusi terpenuhi di CREDITS.md + layar judul + README. Catatan jujur: kolom "License(s)" halaman tidak tertangkap ekstraksi teks browser (sidebar tidak ter-render), jadi string lisensi persis di halaman belum terbaca kata-per-kata; tiga jalur bukti di atas konvergen ke keluarga BY.
+- **ansimuz "Mountain at Dusk":** halaman OGA-nya ada (oleh ansimuz); komentator di halaman itu sendiri menyebutnya public domain; halaman itch.io resmi ansimuz ("Mountain Dusk Parallax background") menyatakan eksplisit "Asset license: Creative Commons Zero v1.0 Universal". Judul ganda ("Mountain at Dusk" di OGA vs "Mountain Dusk" di itch) adalah karya yang sama dari pembuat yang sama — keduanya CC0. Berkas yang dipakai (bg-far/bg-mid) dikomposit dari lapisan paket tersebut sesuai CREDITS.
+- **Daftar larangan bersih:** assets/ berisi tepat 5 PNG dari dua sumber di atas + CREDITS.md — tidak ada paket berbayar itch.io (pzUH/bitknight/Dead Revolver), insanozuke123, Digital Moons, maupun rip SNK.
+- **Peluang v5 (dicatat, TIDAK dikerjakan):** "2D Side scrolling tank" oleh 2D Tyrant (opengameart.org/content/2d-side-scrolling-tank) — License(s): **CC0** tertulis di halamannya; berisi tank_right_strip3.png (sheet tank side-scrolling, 4 KB). Kandidat pengganti sprite kode SV-001 & Di-Cokka. Peringatan: hanya satu strip tank (bukan set animasi lengkap); kecocokan visual & kebutuhan turet putar harus dinilai dari sheet-nya sebelum dipakai.
+
+---
+
+## [2026-10-20] AUDIT v4 — Terverifikasi BUKAN bug / konfirmasi desain
+
+- **Fallback semua-pola:** kegagalan total (5/5), tunggal tiap berkas, gagal-di-akhir (4 sukses lalu gagal), gagal-di-awal, 2-di-tengah — semuanya `applied=false` dengan identitas seluruh SPR v3 utuh (uji perbandingan objek di dalam VM). Semantik "satu gagal = fallback penuh satu gaya" terbukti, bukan klaim.
+- **Balapan:** aset yang tiba 300 langkah setelah permainan berjalan menimpa SPR secara atomik antar-frame (JS single-thread); 600 langkah + 20 render pasca-terapan tanpa exception; selama muat, SPR tetap v3 penuh.
+- **Avatar:** digambar ulang dari frame idle aset setelah apply (drawImage srcW=64 tercatat pada avatarCanvas); gaya terhitung browser 84×84 statis.
+- **Titan guard:** tanpa aset, `drawTitan` memakai jalur gambar-kode v3 (burst/flash/stand) tanpa error; dengan aset, cabang mech dipakai (termasuk `titanMechF` saat hitT).
+- **Musuh:** indeks siklus jalan memakai `% SPR.rebelWalk.length` — 2 frame fallback / 8 frame aset pada laju 6/dtk yang sama; `shieldWalk` terbukti TIDAK tersentuh aset.
+- **Proyektil bos:** titik lahir dari logika (bukan gambar) tidak berubah oleh aset — suite bos v3 (143 uji) tetap lulus pada kode v4 kecuali SATU invariant yang memang digantikan desain v4 (`SPR.titanAsset/titanMech/titanMechF` didefinisikan assets.js, bukan sprites.js — ketidakhadirannya adalah sinyal fallback yang dijaga `&&` di drawTitan).
+- **Muatan:** assets/ terukur 132.118 byte (≈129 KB, sesuai klaim); kelima PNG semuanya terpakai (player/enemies/titan/bgFar/bgMid — tidak ada berkas yatim); `previews/` ada di .gitignore dan tidak masuk daftar berkas rilis/deploy.
+- **Sisa risiko yang tetap berlaku:** rasa tombol & rotasi CSS di Android Chrome sungguhan; frame rate riil 480×270 di HP kelas bawah; penilaian subjektif kualitas visual akhir oleh mata manusia (pemilik).

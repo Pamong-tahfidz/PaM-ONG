@@ -1,13 +1,18 @@
-# PaM-ONG v3 — Misi 1: Operasi Senja
+# PaM-ONG v4 — Misi 1: Operasi Senja
 
 Game web **run-and-gun** terinspirasi *Metal Slug* (SNK) yang bisa dimainkan sampai
 selesai satu misi penuh, ditulis dengan vanilla HTML5 Canvas 2D + JavaScript murni.
 
-**Tanpa library, tanpa framework, tanpa satu pun aset gambar/audio eksternal.** Semua
-sprite digambar prosedural dari peta piksel di `sprites.js` dan dirender sekali ke
-offscreen canvas saat loading; semua suara disintesis WebAudio di `audio.js`. Karakter
-"Pamong" adalah prajurit pixel-art **original** (bandana merah, rompi hijau) — bukan
-salinan sprite SNK.
+**Tanpa library, tanpa framework.** Sejak v4 grafik karakter & latar memakai
+**aset gambar asli berlisensi bebas** (bukan lagi hanya gambar-kode):
+pemain/musuh/Titan dari **"Open Gunner" oleh Master484 (CC-BY 3.0)** dan latar
+pegunungan/hutan dari **"Mountain at Dusk" oleh ansimuz (CC0)** — atribusi
+lengkap di [`assets/CREDITS.md`](assets/CREDITS.md). Suara tetap disintesis
+WebAudio di `audio.js`. Peran yang belum dapat aset cocok (POW, Shield Soldier,
+SV-001, Di-Cokka, Monster Laut, langit & ubin tanah) tetap memakai sprite
+prosedural proyek di `sprites.js`, yang juga menjadi **fallback penuh**: bila
+berkas aset gagal dimuat, game berjalan persis seperti v3. **Tidak ada aset
+rip dari game komersial mana pun.**
 
 ## Cara menjalankan
 
@@ -22,7 +27,50 @@ python3 -m http.server 8080
 Di HP: game tampil penuh layar apa pun orientasinya. Kontrol sentuh muncul otomatis
 di perangkat sentuh.
 
-## Yang berubah di v3 (menjawab 4 keluhan pemain v2)
+## Yang berubah di v4 (menjawab 2 keluhan pemain v3)
+
+1. **Gambar raksasa yang menghalangi layar judul — DIPERBAIKI (struktural).**
+   Di v3, aturan CSS generik `#stage canvas { position:absolute; width:100%;
+   height:100% }` ikut menelan `#avatarCanvas`, karena spesifikasinya
+   (1 ID + 1 elemen) mengalahkan aturan `#avatarCanvas` (1 ID) — canvas avatar
+   108×108 pun direntangkan sebesar panggung, menutupi logo, instruksi, dan
+   tombol MULAI MISI (klik tertolak). Di v4 aturan sepenuh-panggung
+   **dibatasi eksplisit ke `#stage > #game` dan `#stage > #hud`**; avatar
+   diberi ukuran tampil tetap **84×84px**, `position: static`, `flex: none`,
+   `border-radius: 50%` dengan selector diperkuat `#stage #avatarCanvas` —
+   tidak ada jalur CSS yang bisa membuatnya menutupi layar lagi. Ada **uji
+   struktural** yang membaca `style.css`/`index.html` untuk menjaga ini, dan
+   perbaikan diverifikasi di browser sungguhan (Chromium headless): avatar
+   terukur 84×84 dan `elementFromPoint` di tengah tombol MULAI mengembalikan
+   tombol itu sendiri. Pelajaran besarnya tercatat di KOREKSI.md: *uji stub
+   tidak melihat presentasi — rilis wajib diperiksa visualnya.*
+2. **Grafik karakter & latar diganti aset gambar asli (gratis, berlisensi jelas).**
+   Sprite peta-piksel kode untuk pemain, Rebel, Grenade, Bazooka, dan Titan
+   digantikan gambar tangan profesional dari set **Open Gunner (Master484,
+   CC-BY 3.0)**: pemain beranimasi lari 8 frame sungguhan + pose
+   lompat/jongkok/bidik diagonal & atas/lempar/tiarap; musuh di-mirror
+   menghadap kiri; Grenade memakai remap palet cokelat-khaki dan Bazooka
+   palet biru-baja dari frame yang sama; Titan menjadi **mech hijau
+   raksasa** (pose berdiri + tembak). Latar pegunungan & hutan tengah kini
+   memakai lapisan parallax **"Mountain at Dusk" (ansimuz, CC0)**. Mekanik
+   **tidak berubah sama sekali**: kotak tabrak, timing, pola bos, dan data
+   level persis v3 — yang diganti hanya sumber gambarnya (frame aset
+   dipetakan ke state animasi yang sudah ada; siklus jalan Rebel kini
+   memakai 8 frame aset pada laju anim yang sama). Aset dimuat `assets.js`
+   dengan indikator status di layar judul; **satu berkas gagal = fallback
+   penuh ke sprite v3** untuk semua peran aset. Total `assets/` hanya
+   ±129 KB (5 PNG). Avatar judul kini digambar dari frame hero aset.
+   Pratinjau visual jujur (tangkapan layar browser sungguhan dari berkas &
+   skala final) ada di `previews/` — folder itu **tidak** ikut dideploy.
+
+   Yang **belum** terganti (tetap sprite v3, dilaporkan apa adanya): POW &
+   Shield Soldier (tidak ada aset tawanan/perisai berlisensi yang cocok),
+   SV-001 & Di-Cokka (tidak ada tank tampak-samping yang cocok di set
+   gratis yang diperiksa), Monster Laut, langit senja & ubin tanah
+   (lapisan langit v3 dipertahankan agar menyatu dengan strip aset;
+   paket latar CC0 tidak menyediakan ubin tanah).
+
+## Yang berubah di v3 (riwayat — menjawab 4 keluhan pemain v2)
 
 1. **Fullscreen & landscape sekarang TOMBOL manual, bukan otomatis.** Tidak ada lagi
    `requestFullscreen` otomatis saat MULAI, tidak ada kunci orientasi paksa, dan
@@ -146,19 +194,79 @@ Di dalam Slug pemain tidak bisa jongkok, melempar granat, atau memakai pisau.
 
 | Berkas | Isi |
 |---|---|
-| `index.html` | Kerangka halaman: layar judul (+avatar 108×108), pengaturan (Musik/SFX/Getar), pause, ringkasan, tombol pojok & kontrol sentuh di dalam panggung |
-| `style.css` | Full-bleed 100dvw×100dvh, gradasi senja pengisi, rotasi CSS fallback (`body.rot`), kontrol menindih + safe-area |
-| `sprites.js` | Peta piksel semua sprite skala v3 (pemain kaki+torso 8 frame lari, musuh, SV-001, 3 bos, latar 4 lapis, ubin tanah bertekstur) → offscreen canvas |
+| `index.html` | Kerangka halaman: layar judul (+avatar tampil 84×84), pengaturan (Musik/SFX/Getar), pause, ringkasan, tombol pojok & kontrol sentuh di dalam panggung, indikator status aset |
+| `style.css` | Full-bleed 100dvw×100dvh, gradasi senja pengisi, rotasi CSS fallback (`body.rot`), kontrol menindih + safe-area; aturan canvas sepenuh-panggung hanya untuk `#game`/`#hud` |
+| `sprites.js` | Peta piksel semua sprite skala v3 (pemain kaki+torso 8 frame lari, musuh, SV-001, 3 bos, latar 4 lapis, ubin tanah bertekstur) → offscreen canvas. **Di v4 berperan sebagai fallback penuh + pemasok peran yang belum beraset** |
 | `audio.js` | Sintesis SFX + musik chiptune WebAudio, kanal musik/SFX terpisah (tidak berubah dari v2) |
 | `game.js` | CONFIG tuning, state, FSM musuh & 3 bos, fisika, Slug, tombol layar manual, loop, render, HUD |
+| `assets.js` | (v4) Pemuatan aset PNG dari `assets/`, pemotongan frame atlas, penimpaan entri `SPR`, pembuatan siluet kilatan, gambar ulang avatar; status termuat di `window.PAM_ASSETS` |
+| `assets/` | (v4) 5 berkas PNG aset berlisensi (pemain, musuh, Titan, 2 strip latar) + `CREDITS.md` berisi atribusi wajib |
 | `docs/KOREKSI.md` | Catatan koreksi antar-agen — **wajib dibaca sebelum mengubah kode** |
 
-Ukuran total ±217 KB. Semua konstanta tuning ada di `CONFIG` di atas `game.js`.
+Ukuran total ±350 KB (termasuk `assets/` ±129 KB). Semua konstanta tuning ada di `CONFIG` di atas `game.js`.
 
 Kinerja: sprite & latar di-prerender sekali; culling viewport untuk semua entitas;
 semua proyektil/partikel memakai **pool tetap** (partikel ≤240 termasuk selongsong &
 debu); tanpa `shadowBlur`/gradien per frame; tanpa alokasi di loop panas; fixed
 timestep 60fps dengan fallback otomatis 30fps + hit-stop.
+
+## Pengujian yang sudah dilakukan (v4)
+
+- `node --check` lolos untuk `sprites.js`, `audio.js`, `game.js`, `assets.js`.
+- **Uji v4 agen pembangun: 49 lulus, 0 gagal, stabil 3× jalan**
+  (`~/workspace/audit-scratch/t4-v4.js`, stub DOM/canvas/Image mandiri):
+  - **Struktural anti-penghalang (12 uji)**: tidak ada aturan generik
+    `#stage canvas`; aturan sepenuh-panggung hanya menargetkan `#game`/`#hud`;
+    `#avatarCanvas` memiliki width/height 84px eksplisit + `position: static`
+    + `flex: none` + `border-radius: 50%`; tidak ada aturan avatar 100%;
+    struktur HTML (avatar di dalam `#stage`, `assets.js` sesudah `game.js`,
+    `#assetStatus`, label v4).
+  - **Fallback (skenario 404 total)**: `PAM_ASSETS.failed = 5`,
+    `applied = false`, semua `SPR` tetap sprite v3 (termasuk Titan jalur
+    gambar v3) dan misi berjalan normal — game utuh tanpa aset.
+  - **Aset teraplikasi**: `SPR.pIdle` 64×64, siklus lari 8 frame untuk semua
+    7 senjata, kunci lompat Up/Diag lengkap, `rebelWalk`/`rebelWalkF` 8 frame,
+    varian Grenade/Bazooka + siluet kilatan, `shieldWalk` terbukti TIDAK
+    ditimpa, strip latar 960×270, `titanMech` 207×159; 600 langkah gameplay
+    + render Titan cabang aset (termasuk pose salvo) + bunuh Rebel beraset
+    menaikkan skor.
+  - **Berkas di cakram**: dimensi kelima PNG persis manifest; total
+    `assets/` 129 KB ≤ batas 1,2 MB; CREDITS.md memuat atribusi + URL sumber.
+- **Verifikasi visual browser sungguhan** (Chromium headless via CDP,
+  `file://`): aset termuat 5/5 & `applied: true`; gaya terhitung avatar
+  **84×84 statis**; `elementFromPoint` di pusat tombol MULAI = tombol itu
+  sendiri; tangkapan layar judul/gameplay/Titan disimpan di `previews/`
+  (di luar repo & deploy, lihat `.gitignore`).
+- **Regresi silang**: rangkaian audit v3 (143 uji `t3-*` + `t3-screen`)
+  dijalankan ulang terhadap kode v4 — semua lulus kecuali SATU invariant
+  lama yang memang digantikan desain v4: "semua rujukan `SPR.*` terdefinisi
+  oleh `sprites.js`" kini tidak mencakup `SPR.titanAsset`, `SPR.titanMech`,
+  `SPR.titanMechF` yang didefinisikan `assets.js` saat aset termuat
+  (ketidakhadirannya adalah sinyal fallback dan dijaga `SPR.titanAsset &&`
+  di `drawTitan`). Invariant itu perlu diperbarui agen pengoreksi menjadi
+  "terdefinisi oleh sprites.js ATAU assets.js".
+- **Audit independen agen pengoreksi untuk v4: SELESAI** — rangkaian uji
+  terpisah dari nol (stub DOM/canvas/Image sendiri,
+  `~/workspace/audit-scratch/t4-audit.js`): **66 uji lulus, 0 gagal**
+  (sebelum perbaikan: 55 lulus, 11 gagal). Empat bug nyata ditemukan &
+  diperbaiki: (1) pita damage core Titan tidak mengikuti core visual cabang
+  aset (tembakan ke core menyala ×1, ke pinggang justru ×2) — kini pita
+  mengikuti visual aktif (aset y+36..54, fallback y+57..75); (2) penghitung
+  "POW" HUD di kanan atas tertabrak gugus tombol pojok — dipindah ke samping
+  timer (tengah atas); (3) langit: lingkaran bokeh krem alpha 0,28–0,50 dan
+  pita `band()` melintang — pita dihapus, awan ditulis ulang pipih & redup
+  (alpha ≤0,14, mulus di periode 960), halo matahari dilembutkan; (4) teks
+  status aset saat gagal sebagian menyesatkan ("peran itu memakai sprite
+  cadangan") — kini jujur ("seluruh grafik memakai sprite cadangan (v3)").
+  Diverifikasi pula: fallback penuh satu gaya untuk SEMUA pola kegagalan
+  (total/tunggal/awal/akhir/tengah), aset tiba di tengah permainan aman,
+  zona hantu kepala musuh terukur 20–22px (< ambang 25px, tidak diperbaiki).
+  Bukti visual: pratinjau judul/gameplay/Titan di `previews/` digenerate
+  ulang dari Chromium headless (fraksi piksel krem-bokeh di langit:
+  0,63%→0,00%); `elementFromPoint` membuktikan tombol MULAI bisa diklik,
+  avatar 84×84 statis, dan teks POW bebas tombol. Detail: entri "AUDIT v4"
+  di KOREKSI.md.
+- Belum diuji di HP fisik — tetap target uji berikutnya.
 
 ## Pengujian yang sudah dilakukan (v3)
 
@@ -212,6 +320,37 @@ timestep 60fps dengan fallback otomatis 30fps + hit-stop.
 - Suara announcer manusia — announcer masih teks + jingle sintesis.
 - Angka damage hasil riset bersifat kualitatif; tuning sekarang perlu playtest rasa
   di HP sungguhan.
+
+## Titik rawan untuk agen pengoreksi berikutnya (baru di v4)
+
+1. **Urutan muat `assets.js`**: penimpaan `SPR` terjadi asinkron setelah
+   halaman tampil; satu-dua frame pertama layar judul bisa masih memakai
+   sprite v3 sebelum aset tiba (±129 KB, umumnya <1 detik). Avatar digambar
+   ulang oleh `assets.js`; periksa di jaringan lambat apakah pergantian
+   visualnya terasa mengganggu.
+2. **Proporsi sprite aset vs kotak tabrak**: frame aset pemain/musuh 64px
+   digambar untuk kotak 60/39px — musuh tampak lebih besar dari kotak
+   tabraknya (jangkar kaki sama; kepala menjulang ±21px di atas kotak).
+   Disengaja (musuh seukuran pemain seperti Metal Slug), tetapi nilai
+   keadilannya (tembakan yang "mengenai kepala" secara visual vs kotak)
+   perlu penilaian playtest.
+3. **Pose per-senjata hilang untuk pemain**: semua senjata memakai frame
+   hero yang sama (satu meriam tangan besar) — variasi sprite per senjata
+   v3 (senjata di tangan berbeda-beda) gugur demi aset asli. Mekanik &
+   moncong tembakan tidak berubah.
+4. **Titan tanpa lengan putar**: pada cabang aset, meriam menyatu di badan
+   mech (pose tembak saat `burstN > 0`); sudut bidik lengan `armAng` tidak
+   lagi terlihat. Pola serangan & titik lahir proyektil tidak berubah
+   (dihitung dari logika, bukan dari gambar lengan). Posisi core berdenyut
+   pada mech disetel ke (30, 40) relatif kotak — periksa visualnya saat
+   core menyala putih (damage ganda) di pratinjau Titan.
+5. **Palet remap Grenade/Bazooka** dilakukan per-rentang-rona HSV dari satu
+   frame sumber yang sama dengan Rebel — di layar kecil ketiganya harus
+   tetap mudah dibedakan (hijau / khaki / biru-baja).
+6. **Strip latar aset & warna langit v3**: lapisan pegunungan ansimuz
+   berpalet ungu-biru di atas gradasi senja oranye v3; garis horizon
+   berpendar krem pada lapisan jauh adalah bagian asli karya ansimuz.
+   Nilai keserasiannya dari `previews/preview-game.png`.
 
 ## Titik rawan untuk agen pengoreksi berikutnya (baru di v3)
 

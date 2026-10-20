@@ -1,6 +1,6 @@
 'use strict';
 /* =====================================================================
-   PaM-ONG — game.js (v3)
+   PaM-ONG — game.js (v4)
    Run-and-gun Metal Slug — Misi 1 (5 zona): Monster Laut -> SV-001 ->
    Di-Cokka -> ROBOT TITAN. Vanilla Canvas 2D, fixed timestep, pooling.
    v3: dunia 480x270 & level 4600px; fullscreen/landscape = TOMBOL
@@ -1031,8 +1031,14 @@ function damageSea(dmg) {
 function damageTitan(box, dmg) {
   if (!titan.active || titan.dead || titan.dying > 0) return;
   // Core dada dinilai dari PITA VERTIKAL (KOREKSI audit v2): proyektil
-  // setinggi dada yang mengenai badan dihitung mengenai core.
-  _ent.x = titan.x + 30; _ent.y = titan.y + 57; _ent.w = 18; _ent.h = 18;
+  // setinggi dada yang mengenai badan dihitung mengenai core. Pita
+  // mengikuti posisi core VISUAL yang sedang aktif (audit v4): mech
+  // aset menggambar core berdenyut di rel (30,40), sprite v3 di rel
+  // (34,62). Sebelum audit v4 pita selalu di y+57..75, sehingga pada
+  // cabang aset tembakan tepat ke core yang menyala hanya dihitung x1
+  // dan tembakan ke pinggang mech (tanpa core visual) justru x2.
+  const coreBandY = (SPR.titanAsset && SPR.titanMech) ? titan.y + 36 : titan.y + 57;
+  _ent.x = titan.x + 30; _ent.y = coreBandY; _ent.w = 18; _ent.h = 18;
   let mult = 1;
   if (box && box.y < _ent.y + _ent.h && box.y + box.h > _ent.y &&
       box.x < titan.x + titan.w && box.x + box.w > titan.x) { mult = CONFIG.TITAN_CORE_MULT; titan.flashCoreT = 0.1; }
@@ -2160,13 +2166,15 @@ function render() {
     let img, imgF;
     const flash = e.hitT > 0;
     if (e.type === 'rebel') {
-      const wi = (e.animT * 6) % 2 | 0;
+      // Panjang siklus mengikuti array aktif: 2 frame (sprite v3) atau
+      // 8 frame (aset v4) — laju animT tidak berubah.
+      const wi = ((e.animT * 6) | 0) % SPR.rebelWalk.length;
       const moving = Math.abs(player.x - e.x) > 81 && e.state !== 'idle';
       img = moving ? SPR.rebelWalk[wi] : SPR.rebelShoot;
       imgF = moving ? SPR.rebelWalkF[wi] : SPR.rebelShootF;
     }
     else if (e.type === 'shield') {
-      const wi = (e.animT * 6) % 2 | 0;
+      const wi = ((e.animT * 6) | 0) % SPR.shieldWalk.length;
       img = e.state === 'flee' ? SPR.shieldBroken : SPR.shieldWalk[wi];
       imgF = e.state === 'flee' ? SPR.shieldBrokenF : SPR.shieldWalkF[wi];
     }
@@ -2400,7 +2408,19 @@ function drawSlug(camX) {
 
 function drawTitan(camX) {
   const sx = titan.x - camX;
-  if (sx + 105 < 0 || sx > CONFIG.VIEW_W + 15) return;
+  if (sx + 210 < 0 || sx > CONFIG.VIEW_W + 120) return;
+  // Posisi core berdenyut (relatif kotak Titan); beda per sumber grafik.
+  let coreX = sx + 34, coreY = titan.y + 62;
+  if (SPR.titanAsset && SPR.titanMech) {
+    // v4: badan mech ASLI (Open Gunner, CC-BY) — jangkar bawah-tengah pada
+    // kotak tabrak; pose tembak saat salvo meriam berjalan (burstN > 0).
+    // Lengan putar v3 tidak digambar: meriam menyatu di badan mech.
+    let img = SPR.titanMech.stand;
+    if (titan.burstN > 0) img = ((G.time * 10 | 0) % 2 === 0) ? SPR.titanMech.flash : SPR.titanMech.shoot;
+    if (titan.hitT > 0) img = SPR.titanMechF;
+    ctx.drawImage(img, Math.round(sx + titan.w / 2 - img.width / 2), Math.round(titan.y + titan.h - img.height));
+    coreX = sx + 30; coreY = titan.y + 40;
+  } else {
   const img = titan.hitT > 0 ? SPR.titanFlash : SPR.titan;
   // Badan: sprite 96 lebar digambar di titan.x-9 (badan baja di dalamnya)
   ctx.drawImage(img, Math.round(sx - 9), Math.round(titan.y));
@@ -2410,11 +2430,12 @@ function drawTitan(camX) {
   ctx.rotate(titan.armAng);
   ctx.drawImage(SPR.titanArm, -39, -9);
   ctx.restore();
+  }
   // Core berdenyut menyala (berkedip putih saat baru kena damage ganda)
   const pulse = 0.6 + 0.4 * Math.sin(G.time * 6);
   ctx.fillStyle = titan.flashCoreT > 0 ? '#ffffff' : (titanEnraged() ? '#ff7a4d' : '#58c7d8');
   ctx.globalAlpha = pulse;
-  ctx.fillRect(Math.round(sx + 34), Math.round(titan.y + 62), 9, 9);
+  ctx.fillRect(Math.round(coreX), Math.round(coreY), 9, 9);
   ctx.globalAlpha = 1;
   // Bar HP bos
   if (titan.dying <= 0) {
@@ -2528,11 +2549,14 @@ function renderHUD() {
   hudCtx.font = 'bold 20px "Courier New", monospace';
   hudCtx.fillStyle = G.timer <= 10 ? '#d84f35' : '#ffffff';
   hudCtx.fillText(String(Math.max(0, G.timer)), CONFIG.VIEW_W / 2, 20);
-  // POW kanan atas
-  hudCtx.textAlign = 'right';
+  // POW di SAMPING TIMER (tengah atas) — audit v4: posisi lama rata-kanan
+  // di (VIEW_W-10, 16) tertabrak gugus tombol pojok HTML (PENUH/PUTAR/
+  // bisu/jeda menempati ±200px CSS di kanan atas panggung), teks POW
+  // tertutup sebagian tombol pada pratinjau gameplay.
+  hudCtx.textAlign = 'left';
   hudCtx.font = 'bold 13px "Courier New", monospace';
   hudCtx.fillStyle = '#ffffff';
-  hudCtx.fillText('POW x' + G.powSaved, CONFIG.VIEW_W - 10, 16);
+  hudCtx.fillText('POW x' + G.powSaved, CONFIG.VIEW_W / 2 + 30, 16);
   hudCtx.textAlign = 'left';
 }
 

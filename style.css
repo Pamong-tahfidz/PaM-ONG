@@ -1,4 +1,4 @@
-/* PaM-ONG — style.css (v3)
+/* PaM-ONG — style.css (v4)
    Tata letak FULL-BLEED: pembungkus memenuhi 100dvw x 100dvh tanpa
    margin/padding; canvas diskalakan contain (seluruh area 480x270
    selalu tampil); sisa ruang diisi gradasi senja senada langit game,
@@ -54,7 +54,12 @@ body.rot #stageWrap {
   overflow: hidden;
 }
 
-#stage canvas {
+/* v4: aturan canvas sepenuh panggung DIBATASI EKSPLISIT ke #game & #hud.
+   Aturan generik "#stage canvas" di v3 menelan #avatarCanvas juga
+   (spesifisitas 1 ID + 1 elemen mengalahkan "#avatarCanvas" 1 ID)
+   sehingga avatar judul tergambar sebesar panggung & menutupi layar. */
+#stage > #game,
+#stage > #hud {
   position: absolute;
   left: 0;
   top: 0;
@@ -119,9 +124,14 @@ body.rot #stageWrap {
   align-items: center;
   gap: 14px;
 }
-#avatarCanvas {
-  width: 96px;
-  height: 96px;
+/* Avatar judul: ukuran tampil TETAP & statis — tidak boleh bisa
+   menutupi layar dalam keadaan apa pun. Selector diperkuat dengan
+   #stage agar menang dari aturan canvas mana pun. */
+#stage #avatarCanvas {
+  position: static;
+  flex: none;
+  width: 84px;
+  height: 84px;
   image-rendering: pixelated;
   border-radius: 50%;
 }

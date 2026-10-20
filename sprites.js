@@ -1786,41 +1786,50 @@ function drawBgSky() {
     for (let i = 0; i < 60; i++) ctx.fillRect((rnd() * 958) | 0, (rnd() * 70) | 0, 1, 1);
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     for (let i = 0; i < 30; i++) ctx.fillRect((rnd() * 958) | 0, (rnd() * 100) | 0, 2, 1);
-    // matahari rendah + halo berlapis
-    ctx.fillStyle = 'rgba(247,215,116,0.18)';
+    // matahari rendah + halo berlapis (dilembutkan audit v4: cincin halo
+    // tembus pandang yang besar terbaca sebagai noda di langit)
+    ctx.fillStyle = 'rgba(247,215,116,0.10)';
     ctx.beginPath(); ctx.arc(738, 168, 58, 0, 7); ctx.fill();
-    ctx.fillStyle = 'rgba(247,215,116,0.3)';
+    ctx.fillStyle = 'rgba(247,215,116,0.16)';
     ctx.beginPath(); ctx.arc(738, 168, 42, 0, 7); ctx.fill();
     ctx.fillStyle = '#f7d774'; ctx.beginPath(); ctx.arc(738, 168, 31, 0, 7); ctx.fill();
     ctx.fillStyle = '#f9e08a'; ctx.beginPath(); ctx.arc(738, 168, 24, 0, 7); ctx.fill();
     ctx.fillStyle = '#f7d774'; ctx.fillRect(706, 166, 64, 3);
-    // pita awan jauh membusur (organik, transparan)
-    ctx.fillStyle = 'rgba(90,52,86,0.35)';
-    const band = (y, h, off) => {
-      for (let x = -40; x < 1000; x += 90) {
-        ctx.beginPath(); ctx.arc(x + off + 40, y, 42, 0, 7); ctx.fill();
-      }
-      ctx.fillRect(0, y, 960, h);
-    };
-    band(58, 7, 10); band(96, 5, 55);
+    // (Pita awan melintang warisan v3 DIHAPUS audit v4: baris lingkaran
+    // r=42 + fillRect sepenuh lebar membentuk GARIS MELINTANG keras di
+    // tengah langit pada pratinjau gameplay — langit kini bersih, awan
+    // hanya hidup di lapis cloudStrip yang redup.)
   });
 }
 function drawCloudStrip() {
   return makeCanvas(960, 270, (ctx) => {
-    const cloud = (x, y, w, tone) => {
+    // Awan PIPIH & REDUP (ditulis ulang audit v4): versi lama menumpuk
+    // lingkaran krem alpha 0.28-0.5 beradius sampai 44px + alas fillRect
+    // lebar — di layar terbaca sebagai noda bokeh raksasa yang menutupi
+    // langit & teks announcer. Kini: gumpalan kecil sebaris (r <= 9px,
+    // tinggi total <= 12px), alpha <= 0.14, dan setiap awan yang
+    // menembus tepi digambar ulang di sisi seberang agar strip mulus
+    // pada periode gulir 960.
+    const puff = (x, y, w, tone) => {
       ctx.fillStyle = tone;
-      ctx.beginPath(); ctx.arc(x, y, w * 0.26, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(x + w * 0.28, y + 4, w * 0.2, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(x - w * 0.28, y + 5, w * 0.18, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(x + w * 0.08, y - 6, w * 0.16, 0, 7); ctx.fill();
-      ctx.fillRect(x - w * 0.3, y, w * 0.6, 6);
+      const n = 5;
+      for (let i = 0; i < n; i++) {
+        const cx = x - w / 2 + (i + 0.5) * (w / n);
+        const r = 5 + ((i * 7) % 4);
+        ctx.beginPath(); ctx.arc(cx, y - r * 0.4, r, 0, 7); ctx.fill();
+      }
+      ctx.fillRect(x - w / 2, y - 2, w, 3);
     };
-    cloud(130, 52, 130, 'rgba(247,215,160,0.5)');
-    cloud(430, 82, 170, 'rgba(240,190,140,0.42)');
-    cloud(760, 44, 120, 'rgba(247,215,160,0.5)');
-    cloud(950, 104, 150, 'rgba(230,170,130,0.36)');
-    cloud(40, 116, 100, 'rgba(240,190,140,0.3)');
-    cloud(620, 122, 110, 'rgba(247,215,160,0.28)');
+    const cloud = (x, y, w, tone) => {
+      puff(x, y, w, tone);
+      if (x - w / 2 < 0) puff(x + 960, y, w, tone);
+      if (x + w / 2 > 960) puff(x - 960, y, w, tone);
+    };
+    cloud(150, 46, 120, 'rgba(250,224,180,0.14)');
+    cloud(430, 74, 150, 'rgba(246,205,160,0.12)');
+    cloud(720, 40, 110, 'rgba(250,224,180,0.14)');
+    cloud(905, 96, 130, 'rgba(240,190,150,0.10)');
+    cloud(60, 104, 90, 'rgba(246,205,160,0.10)');
   });
 }
 function drawBgFar(groundY) {
