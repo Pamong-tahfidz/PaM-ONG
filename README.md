@@ -92,7 +92,7 @@ di perangkat sentuh.
    pisau & lempar granat lebih besar. Musuh & bos diperbesar sepadan — Titan ±150px
    berpanel baja, rivet, lampu indikator, dan core berdenyut; Monster Laut bersisik,
    bermata besar, bergigi, bertentakel segmen. Latar **4 lapis parallax** di-prerender
-   (langit gradasi + awan organik; pegunungan bertekstur; hutan tengah dengan pohon
+   (langit gradasi + bintang + matahari; pegunungan bertekstur; hutan tengah dengan pohon
    bervariasi; rumpun foreground bergoyang pelan). Juice khas: **selongsong peluru
    beterbangan memantul**, percikan **tanah/air sesuai permukaan**, debu kaki saat
    lari & mendarat, ledakan berlapis api + asap membumbung, kilatan moncong, asap
@@ -266,6 +266,18 @@ timestep 60fps dengan fallback otomatis 30fps + hit-stop.
   0,63%→0,00%); `elementFromPoint` membuktikan tombol MULAI bisa diklik,
   avatar 84×84 statis, dan teks POW bebas tombol. Detail: entri "AUDIT v4"
   di KOREKSI.md.
+- **Perbaikan mikro v4.1 (pasca-rilis live v4):** strip awan gambar-kode
+  (`cloudStrip`) DICABUT TOTAL — gumpalan cakram + garis alas `fillRect`-nya
+  masih terbaca seperti noda bergaris pada tangkapan layar live meski sudah
+  diperkecil audit v4. Langit akhir = gradasi + bintang + halo matahari
+  redup + lapisan gambar ansimuz (bgFar/bgMid); fungsi `drawCloudStrip`,
+  kunci `SPR.cloudStrip`, dan gambar lapisannya di `render()` dihapus
+  bersih (nol rujukan). Suite tetap 66/66 & 143+1 pola lama (asersi langit
+  diperbarui menegaskan ketiadaan strip); `SPR.cloudStrip` terbukti
+  `undefined` saat jalan; analisis piksel komposit latar pada 5 fase
+  kamera: run terang-lokal terpanjang di wilayah langit hanya 2px, jauh
+  di bawah lebar alas awan lama (90–150px). Pratinjau digenerate ulang.
+  Detail: entri "v4.1" di KOREKSI.md.
 - Belum diuji di HP fisik — tetap target uji berikutnya.
 
 ## Pengujian yang sudah dilakukan (v3)

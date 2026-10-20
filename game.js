@@ -2032,15 +2032,11 @@ function render() {
 
   // Lapis 1: langit senja (statis)
   ctx.drawImage(SPR.bgSky, 0, 0);
-  // Lapis 2: awan organik bergeser sangat pelan (0.05 + waktu)
-  const cloudOff = -Math.floor(camX * 0.05 + G.time * 1.8) % 960;
-  ctx.drawImage(SPR.cloudStrip, cloudOff, 0);
-  ctx.drawImage(SPR.cloudStrip, cloudOff + 960, 0);
-  // Lapis 3: pegunungan bertekstur & hutan jauh (0.3)
+  // Lapis 2: pegunungan bertekstur & hutan jauh (0.3)
   const farOff = -Math.floor(camX * 0.3) % 960;
   ctx.drawImage(SPR.bgFar, farOff, 0);
   ctx.drawImage(SPR.bgFar, farOff + 960, 0);
-  // Lapis 4: hutan tengah bervariasi (0.6)
+  // Lapis 3: hutan tengah bervariasi (0.6)
   const midOff = -Math.floor(camX * 0.6) % 960;
   ctx.drawImage(SPR.bgMid, midOff, 0);
   ctx.drawImage(SPR.bgMid, midOff + 960, 0);

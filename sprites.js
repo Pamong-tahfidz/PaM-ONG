@@ -1761,12 +1761,13 @@ function drawRuin() { // dinding reruntuhan 54x48 (zona lapangan akhir)
 }
 
 /* ---------------------------------------------------------------------
-   LATAR 4 LAPIS v3 — tiap lapis di-prerender SEKALI (960x270).
-   Lapis 1 bgSky: gradasi senja kaya + matahari + awan organik jauh.
-   Lapis 2 cloudStrip: awan berlapis bentuk organik (parallax 0.05).
-   Lapis 3 bgFar: pegunungan bertekstur + siluet hutan jauh (0.3).
-   Lapis 4 bgMid: hutan tengah BERVARIASI (0.6) — 3 tipe pohon.
+   LATAR BERLAPIS v3 — tiap lapis di-prerender SEKALI (960x270).
+   Lapis 1 bgSky: gradasi senja kaya + bintang + matahari berhalo redup.
+   Lapis 2 bgFar: pegunungan bertekstur + siluet hutan jauh (0.3).
+   Lapis 3 bgMid: hutan tengah BERVARIASI (0.6) — 3 tipe pohon.
    Foreground: rumpun tepi bawah semi-transparan 2 varian (bergoyang).
+   (Strip awan gambar-kode DIHAPUS v4.1: gumpalan cakram + garis alasnya
+   dua kali ditolak mata manusia di layar sungguhan — lihat KOREKSI.md.)
    --------------------------------------------------------------------- */
 function drawBgSky() {
   return makeCanvas(960, 270, (ctx) => {
@@ -1795,41 +1796,10 @@ function drawBgSky() {
     ctx.fillStyle = '#f7d774'; ctx.beginPath(); ctx.arc(738, 168, 31, 0, 7); ctx.fill();
     ctx.fillStyle = '#f9e08a'; ctx.beginPath(); ctx.arc(738, 168, 24, 0, 7); ctx.fill();
     ctx.fillStyle = '#f7d774'; ctx.fillRect(706, 166, 64, 3);
-    // (Pita awan melintang warisan v3 DIHAPUS audit v4: baris lingkaran
-    // r=42 + fillRect sepenuh lebar membentuk GARIS MELINTANG keras di
-    // tengah langit pada pratinjau gameplay — langit kini bersih, awan
-    // hanya hidup di lapis cloudStrip yang redup.)
-  });
-}
-function drawCloudStrip() {
-  return makeCanvas(960, 270, (ctx) => {
-    // Awan PIPIH & REDUP (ditulis ulang audit v4): versi lama menumpuk
-    // lingkaran krem alpha 0.28-0.5 beradius sampai 44px + alas fillRect
-    // lebar — di layar terbaca sebagai noda bokeh raksasa yang menutupi
-    // langit & teks announcer. Kini: gumpalan kecil sebaris (r <= 9px,
-    // tinggi total <= 12px), alpha <= 0.14, dan setiap awan yang
-    // menembus tepi digambar ulang di sisi seberang agar strip mulus
-    // pada periode gulir 960.
-    const puff = (x, y, w, tone) => {
-      ctx.fillStyle = tone;
-      const n = 5;
-      for (let i = 0; i < n; i++) {
-        const cx = x - w / 2 + (i + 0.5) * (w / n);
-        const r = 5 + ((i * 7) % 4);
-        ctx.beginPath(); ctx.arc(cx, y - r * 0.4, r, 0, 7); ctx.fill();
-      }
-      ctx.fillRect(x - w / 2, y - 2, w, 3);
-    };
-    const cloud = (x, y, w, tone) => {
-      puff(x, y, w, tone);
-      if (x - w / 2 < 0) puff(x + 960, y, w, tone);
-      if (x + w / 2 > 960) puff(x - 960, y, w, tone);
-    };
-    cloud(150, 46, 120, 'rgba(250,224,180,0.14)');
-    cloud(430, 74, 150, 'rgba(246,205,160,0.12)');
-    cloud(720, 40, 110, 'rgba(250,224,180,0.14)');
-    cloud(905, 96, 130, 'rgba(240,190,150,0.10)');
-    cloud(60, 104, 90, 'rgba(246,205,160,0.10)');
+    // (Dekorasi awan gambar-kode DIHAPUS: pita melintang v3 dibuang audit
+    // v4, strip awan terpisah dibuang v4.1 — gumpalan cakram + garis
+    // alasnya tetap terbaca aneh di layar sungguhan. Langit kini hanya
+    // gradasi + bintang + matahari; awan serahkan ke gambar aset latar.)
   });
 }
 function drawBgFar(groundY) {
@@ -2272,7 +2242,6 @@ function buildSprites(groundY) {
 
   // Latar & ubin
   S.bgSky = drawBgSky();
-  S.cloudStrip = drawCloudStrip();
   S.bgFar = drawBgFar(groundY);
   S.bgMid = drawBgMid(groundY);
   S.fgTufts = [drawFgTuft(0), drawFgTuft(1)];
