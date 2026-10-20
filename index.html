@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PaM-ONG — Misi 1</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="320" height="224"></canvas>
+  <canvas id="hud" width="320" height="224"></canvas>
+
+  <!-- Layar judul -->
+  <div id="titleScreen" class="screen">
+    <h1 class="logo">PaM&#8209;ONG</h1>
+    <p class="tagline">MISI 1 &mdash; OPERASI SENJA</p>
+    <div class="controls-box">
+      <p><b>GERAK</b>: &larr; &rarr; &uarr; &darr; / D-Pad</p>
+      <p><b>A &mdash; TEMBAK</b> (tahan = auto): Z / J</p>
+      <p><b>B &mdash; LOMPAT</b>: X / K</p>
+      <p><b>C &mdash; GRANAT</b>: C / L</p>
+      <p>Bebaskan POW untuk dapat senjata. Hancurkan tank Di-Cokka!</p>
+    </div>
+    <button id="startBtn" class="big-btn">MULAI MISI</button>
+    <p class="hint">Enter / Spasi juga bisa &bull; M = bisu</p>
+  </div>
+
+  <!-- Layar ringkasan / game over -->
+  <div id="endScreen" class="screen hidden">
+    <h1 id="endTitle" class="logo small">MISI SELESAI!</h1>
+    <p id="endStats" class="stats"></p>
+    <button id="againBtn" class="big-btn">MAIN LAGI</button>
+    <button id="menuBtn" class="small-btn">KE JUDUL</button>
+  </div>
+</div>
+
+<!-- Kontrol sentuh -->
+<div id="touchControls">
+  <div id="dpad">
+    <button class="tbtn" id="btnUp" aria-label="Atas">&#9650;</button>
+    <button class="tbtn" id="btnLeft" aria-label="Kiri">&#9664;</button>
+    <button class="tbtn" id="btnDown" aria-label="Bawah">&#9660;</button>
+    <button class="tbtn" id="btnRight" aria-label="Kanan">&#9654;</button>
+  </div>
+  <div id="abtns">
+    <button class="tbtn" id="btnC" aria-label="Granat">C<span>GRANAT</span></button>
+    <button class="tbtn" id="btnB" aria-label="Lompat">B<span>LOMPAT</span></button>
+    <button class="tbtn big" id="btnA" aria-label="Tembak">A<span>TEMBAK</span></button>
+  </div>
+</div>
+
+<button id="muteBtn" aria-label="Bisu / bunyikan">&#128266;</button>
+
+<script src="sprites.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

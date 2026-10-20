@@ -1,0 +1,184 @@
+/* PaM-ONG — style.css */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0b10;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: "Courier New", Courier, monospace;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Panggung: ukuran diatur JS (skala integer), letterbox hitam rapi */
+#stage {
+  position: relative;
+  flex: 0 0 auto;
+  background: #000;
+  box-shadow: 0 0 0 2px #2a2a33, 0 0 42px rgba(0, 0, 0, 0.8);
+}
+
+#stage canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+#hud { pointer-events: none; }
+
+/* ---------- Layar judul & ringkasan ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(10, 10, 18, 0.82);
+  color: #f2f0e6;
+  text-align: center;
+  padding: 10px;
+  z-index: 5;
+}
+.screen.hidden { display: none; }
+
+.logo {
+  font-size: 40px;
+  letter-spacing: 3px;
+  color: #f2c230;
+  text-shadow: 3px 3px 0 #932222, -1px -1px 0 #20242a;
+}
+.logo.small { font-size: 26px; }
+.tagline { color: #7ec8e3; font-weight: bold; letter-spacing: 2px; font-size: 12px; }
+
+.controls-box {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #d8d4c4;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px 12px;
+}
+.controls-box b { color: #f2c230; }
+
+.big-btn {
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #20242a;
+  background: #f2c230;
+  border: 0;
+  border-bottom: 4px solid #b8912a;
+  border-radius: 6px;
+  padding: 10px 26px;
+  min-height: 48px;
+  cursor: pointer;
+}
+.big-btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+
+.small-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: #f2f0e6;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  padding: 7px 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.hint { font-size: 10px; color: #8f9296; }
+.stats { font-size: 13px; line-height: 1.9; color: #f2f0e6; }
+.stats b { color: #f2c230; }
+
+/* ---------- Kontrol sentuh ---------- */
+#touchControls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 10px 12px;
+  pointer-events: none;
+  z-index: 10;
+}
+body.has-touch #touchControls { display: flex; }
+@media (pointer: coarse) { #touchControls { display: flex; } }
+
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(2, 56px);
+  gap: 4px;
+  pointer-events: none;
+}
+#btnUp    { grid-column: 2; grid-row: 1; }
+#btnLeft  { grid-column: 1; grid-row: 2; }
+#btnDown  { grid-column: 2; grid-row: 2; }
+#btnRight { grid-column: 3; grid-row: 2; }
+
+#abtns {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.tbtn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: bold;
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.tbtn span { font-size: 7px; letter-spacing: 0.5px; color: #d8d4c4; margin-top: 2px; }
+.tbtn.big { width: 68px; height: 68px; font-size: 20px; background: rgba(207, 52, 52, 0.35); border-color: rgba(255, 120, 120, 0.6); }
+.tbtn.on { background: rgba(242, 194, 48, 0.5); border-color: #f2c230; }
+
+/* ---------- Tombol bisu ---------- */
+#muteBtn {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(20, 20, 28, 0.6);
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+  z-index: 20;
+}
